@@ -1,0 +1,16 @@
+export const STR = {
+  bannerPrefix: '社区标记',
+  confirmUnit: '人确认',
+  morePrefix: '等',
+  pendingTag: '含待确认',
+  pendingUnit: '条',
+  viewReasons: '查看理由',
+  hideReasons: '收起',
+  pendingNote: '待确认（低置信）',
+  disclaimer: '以上为社区用户标记，不代表平台或本插件立场。',
+  evidenceLabel: '证据：',
+  restoreTitle: '小电视避雷针：该视频有社区标记，点击展开',
+  demoChipLabel: '演示 · 3',
+  demoTip: '演示数据：此角标由 Popup 演示按钮触发，用于开发预览。',
+  demoBannerNote: '演示数据：此提示条由 Popup 演示按钮触发，用于开发预览。',
+};

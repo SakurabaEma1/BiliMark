@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>小电视避雷针 · 设置</title>
+  <style>
+    body {
+      width: 480px;
+      margin: 40px auto;
+      padding: 20px;
+      font: 13px/1.7 system-ui, sans-serif;
+      background: #1e1e22;
+      color: #e6e6e6;
+      border-radius: 10px;
+    }
+    h1 {
+      font-size: 16px;
+      color: #fb7299;
+      margin: 0 0 6px;
+    }
+    .sub {
+      color: #9a9a9a;
+      font-size: 12px;
+      margin-bottom: 14px;
+    }
+    label {
+      display: block;
+      color: #aaaaaa;
+      margin-bottom: 4px;
+    }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px 10px;
+      border: 1px solid #444444;
+      border-radius: 6px;
+      background: #2a2a30;
+      color: #e6e6e6;
+      font: 13px/1.5 system-ui, sans-serif;
+    }
+    button {
+      margin-top: 10px;
+      padding: 8px 18px;
+      border: 1px solid #ffaa00;
+      border-radius: 6px;
+      background: rgba(255, 170, 0, 0.12);
+      color: #ffaa00;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    button.ghost {
+      border-color: #444444;
+      background: transparent;
+      color: #9a9a9a;
+    }
+    #hint {
+      margin-top: 8px;
+      font-size: 12px;
+      min-height: 18px;
+    }
+    #hint.ok {
+      color: #7ec97e;
+    }
+    #hint.err {
+      color: #ff7a7a;
+    }
+    .note {
+      color: #777777;
+      font-size: 12px;
+      margin-top: 14px;
+      line-height: 1.7;
+    }
+  </style>
+</head>
+<body>
+  <h1>小电视避雷针 · 设置</h1>
+  <div class="sub">v0.3.0</div>
+
+  <label for="apiBase">服务器地址（API 基址）</label>
+  <input id="apiBase" placeholder="https://your.domain 或 http://127.0.0.1:8787" />
+  <button id="save">保存</button>
+  <button class="ghost" id="reset">恢复默认（本地开发服务器）</button>
+  <div id="hint"></div>
+
+  <div class="note">
+    · 提交的标记与投票发送到该地址；私人 ID 永远只存本机，服务器仅收到其单向哈希。<br />
+    · 服务器未启动时插件自动回退本地模式：提交仅自己可见，角标与演示功能不受影响。
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

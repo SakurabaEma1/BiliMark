@@ -1,0 +1,455 @@
+/**
+ * BiliMark 轻量 API 服务器（v0.3）
+ *
+ * 零运行时依赖：node:http + Node 24 内置 node:sqlite（ADR-0006）。
+ * 单文件微服务是有意的——契合 ADR-0005 的零成本与可接管性：
+ * 数据库就是一个 SQLite 文件，复制即备份，发布即全量（/database.json）。
+ * 规模到了再拆文件、再换 Postgres。
+ */
+import { createHash } from 'node:crypto';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { DatabaseSync } from 'node:sqlite';
+import { mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const PORT = Number(process.env.PORT ?? 8787);
+const here = dirname(fileURLToPath(import.meta.url));
+const dataDir = join(here, '..', 'data');
+mkdirSync(dataDir, { recursive: true });
+
+const db = new DatabaseSync(join(dataDir, 'bilimark.db'));
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS submissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bvid TEXT NOT NULL,
+    category TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    evidence TEXT NOT NULL,
+    public_id TEXT NOT NULL,
+    claimed_lv6 INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    UNIQUE(bvid, category, public_id)
+  );
+  CREATE TABLE IF NOT EXISTS votes (
+    bvid TEXT NOT NULL,
+    category TEXT NOT NULL,
+    public_id TEXT NOT NULL,
+    vote INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE(bvid, category, public_id)
+  );
+  CREATE TABLE IF NOT EXISTS shadowbans (
+    public_id TEXT PRIMARY KEY,
+    note TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL
+  );
+`);
+// 旧库迁移：v0.3 前的 submissions 表补 claimed_lv6 列（已存在则忽略）
+try {
+  db.exec('ALTER TABLE submissions ADD COLUMN claimed_lv6 INTEGER NOT NULL DEFAULT 0');
+} catch {
+  // 列已存在
+}
+
+/** 调优待定项（FEASIBILITY.md 实现期待定项）：先写死，跑起来有数据再调 */
+const CONFIRM_THRESHOLD = 3; // 净票 ≥ 3 → 已确认
+const HIDE_THRESHOLD = -2; // 净票 ≤ -2 → 驳回（隐藏）
+const NOVICE_SUBMISSIONS = 3; // 新手期：公开 ID 的前 3 条提交（GOVERNANCE.md）
+const NOVICE_MULTIPLIER = 2; // 新手期确认阈值倍数（全新手标记需 6 票）
+const ADMIN_KEY = process.env.ADMIN_KEY ?? ''; // 未设置则管理端点不可达（404，不暴露存在）
+const CATEGORIES = new Set(['ai_low_effort', 'clickbait', 'misinformation']);
+const BVID_RE = /^BV[0-9A-Za-z]{10}$/;
+
+interface SubRow {
+  id: number;
+  bvid: string;
+  category: string;
+  reason: string;
+  evidence: string;
+  public_id: string;
+  claimed_lv6: number;
+  created_at: number;
+}
+interface VoteRow {
+  bvid: string;
+  category: string;
+  public_id: string;
+  vote: number;
+}
+
+function sha256(input: string): string {
+  return createHash('sha256').update(input).digest('hex');
+}
+
+// ---------- 简易限流：每 IP 每分钟 120 次 ----------
+const hits = new Map<string, { n: number; t: number }>();
+function rateLimited(ip: string): boolean {
+  const now = Date.now();
+  const rec = hits.get(ip) ?? { n: 0, t: now };
+  if (now - rec.t > 60_000) {
+    rec.n = 0;
+    rec.t = now;
+  }
+  rec.n += 1;
+  hits.set(ip, rec);
+  if (hits.size > 10_000) hits.clear(); // 防-map膨胀，粗粒度即可
+  return rec.n > 120;
+}
+
+// ---------- 聚合：标记状态机（CONTEXT.md「标记状态机」）----------
+interface Agg {
+  net: number;
+  against: number;
+  reasons: Array<{ reason: string; at: number }>;
+  evidence: Set<string>;
+}
+
+function aggregate(bvids: string[], asHash: string | null): Record<string, unknown[]> {
+  const placeholders = bvids.map(() => '?').join(',');
+  const subs = db
+    .prepare(
+      `SELECT id, bvid, category, reason, evidence, public_id, claimed_lv6, created_at
+       FROM submissions WHERE bvid IN (${placeholders}) ORDER BY created_at ASC`,
+    )
+    .all(...bvids) as unknown as SubRow[];
+  const votes = db
+    .prepare(
+      `SELECT bvid, category, public_id, vote FROM votes WHERE bvid IN (${placeholders})`,
+    )
+    .all(...bvids) as unknown as VoteRow[];
+
+  // 影子封禁：被处理者的内容全网隐藏，仅「as=本人哈希」时可见（GOVERNANCE.md）
+  const shadowRows = db.prepare(`SELECT public_id FROM shadowbans`).all() as unknown as Array<{
+    public_id: string;
+  }>;
+  const shadowSet = new Set(shadowRows.map((r) => r.public_id));
+  const visible = (pid: string): boolean => !shadowSet.has(pid) || pid === asHash;
+
+  const visSubs = subs.filter((s) => visible(s.public_id));
+  const visVotes = votes.filter((v) => visible(v.public_id));
+
+  // 新手期：按贡献者全部提交的 id 序（=时间序）取前 N 条；claimed_lv6 豁免
+  const contributors = [...new Set(visSubs.map((s) => s.public_id))];
+  const noviceSet = new Set<number>();
+  if (contributors.length > 0) {
+    const ph = contributors.map(() => '?').join(',');
+    const allOf = db
+      .prepare(
+        `SELECT id, public_id, claimed_lv6 FROM submissions WHERE public_id IN (${ph}) ORDER BY public_id, id ASC`,
+      )
+      .all(...contributors) as unknown as Array<{
+      id: number;
+      public_id: string;
+      claimed_lv6: number;
+    }>;
+    const counts = new Map<string, number>();
+    for (const r of allOf) {
+      const c = counts.get(r.public_id) ?? 0;
+      if (c < NOVICE_SUBMISSIONS && !r.claimed_lv6) noviceSet.add(r.id);
+      counts.set(r.public_id, c + 1);
+    }
+  }
+
+  const byKey = new Map<string, Agg & { allNovice: boolean }>();
+  for (const s of visSubs) {
+    const key = `${s.bvid}|${s.category}`;
+    const agg =
+      byKey.get(key) ?? {
+        net: 0,
+        against: 0,
+        reasons: [],
+        evidence: new Set<string>(),
+        allNovice: true,
+      };
+    agg.net += 1; // 提交者本人算一票赞成
+    if (!noviceSet.has(s.id)) agg.allNovice = false;
+    agg.reasons.push({ reason: s.reason, at: s.created_at });
+    try {
+      for (const e of JSON.parse(s.evidence) as string[]) agg.evidence.add(e);
+    } catch {
+      // 损坏的历史数据不阻断聚合
+    }
+    byKey.set(key, agg);
+  }
+  for (const v of visVotes) {
+    const agg = byKey.get(`${v.bvid}|${v.category}`);
+    if (!agg) continue;
+    agg.net += v.vote;
+    if (v.vote < 0) agg.against += 1;
+  }
+
+  const out: Record<string, unknown[]> = {};
+  for (const [key, agg] of byKey) {
+    if (agg.net <= HIDE_THRESHOLD) continue; // 驳回：对全网隐藏
+    const [bvid, category] = key.split('|');
+    // 新手期乘法器：全部贡献者都在新手期 → 阈值翻倍（GOVERNANCE.md）
+    const threshold = agg.allNovice ? CONFIRM_THRESHOLD * NOVICE_MULTIPLIER : CONFIRM_THRESHOLD;
+    (out[bvid] ??= []).push({
+      category,
+      status: agg.net >= threshold ? 'confirmed' : 'pending',
+      confirmCount: agg.net,
+      againstCount: agg.against,
+      reason: agg.reasons.sort((a, b) => b.at - a.at)[0]?.reason ?? '',
+      evidence: [...agg.evidence].slice(0, 3),
+    });
+  }
+  return out;
+}
+
+// ---------- HTTP 骨架 ----------
+function cors(res: ServerResponse): void {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+
+function sendJson(res: ServerResponse, code: number, body: unknown): void {
+  cors(res);
+  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify(body));
+}
+
+function readBody(req: IncomingMessage, limit = 10_240): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => {
+      size += c.length;
+      if (size > limit) {
+        reject(new Error('body too large'));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+    req.on('error', reject);
+  });
+}
+
+const server = createServer((req, res) => {
+  void (async () => {
+    const ip = req.socket.remoteAddress ?? 'unknown';
+    cors(res);
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+
+    if (rateLimited(ip)) {
+      sendJson(res, 429, { error: 'rate limited' });
+      return;
+    }
+
+    // GET /api/health
+    if (req.method === 'GET' && url.pathname === '/api/health') {
+      const n = (db.prepare('SELECT COUNT(*) AS n FROM submissions').get() as { n: number }).n;
+      sendJson(res, 200, { ok: true, submissions: n });
+      return;
+    }
+
+    // GET /api/markings?bvids=BV1,BV2[&as=<本人 public_id 哈希>]
+    if (req.method === 'GET' && url.pathname === '/api/markings') {
+      const bvids = (url.searchParams.get('bvids') ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => BVID_RE.test(s))
+        .slice(0, 50);
+      const asRaw = url.searchParams.get('as') ?? '';
+      const as = /^[0-9a-f]{64}$/.test(asRaw) ? asRaw : null;
+      if (bvids.length === 0) {
+        sendJson(res, 200, { markings: {} });
+        return;
+      }
+      sendJson(res, 200, { markings: aggregate(bvids, as) });
+      return;
+    }
+
+    // POST /api/markings
+    if (req.method === 'POST' && url.pathname === '/api/markings') {
+      try {
+        const body = JSON.parse(await readBody(req)) as {
+          bvid?: string;
+          category?: string;
+          reason?: string;
+          evidence?: string[];
+          privateId?: string;
+          claimedLv6?: boolean;
+        };
+        const bvid = body.bvid ?? '';
+        const category = body.category ?? '';
+        const reason = (body.reason ?? '').trim();
+        const evidence = Array.isArray(body.evidence)
+          ? body.evidence.filter((u) => /^https?:\/\//i.test(u)).slice(0, 5)
+          : [];
+        const privateId = body.privateId ?? '';
+
+        if (!BVID_RE.test(bvid) || !CATEGORIES.has(category)) {
+          sendJson(res, 400, { error: 'invalid bvid or category' });
+          return;
+        }
+        if (reason.length < 5 || reason.length > 500) {
+          sendJson(res, 400, { error: 'reason must be 5-500 chars' });
+          return;
+        }
+        if (category === 'misinformation' && evidence.length === 0) {
+          sendJson(res, 400, { error: 'misinformation requires evidence' });
+          return;
+        }
+        if (privateId.length < 32) {
+          sendJson(res, 400, { error: 'invalid privateId' });
+          return;
+        }
+
+        try {
+          db.prepare(
+            `INSERT INTO submissions (bvid, category, reason, evidence, public_id, claimed_lv6, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          ).run(
+            bvid,
+            category,
+            reason,
+            JSON.stringify(evidence),
+            sha256(privateId),
+            body.claimedLv6 === true ? 1 : 0,
+            Date.now(),
+          );
+        } catch {
+          sendJson(res, 409, { error: 'already submitted' }); // 同一贡献者对同一(视频,分类)唯一
+          return;
+        }
+        sendJson(res, 200, { ok: true });
+      } catch {
+        sendJson(res, 400, { error: 'bad request' });
+      }
+      return;
+    }
+
+    // POST /api/vote
+    if (req.method === 'POST' && url.pathname === '/api/vote') {
+      try {
+        const body = JSON.parse(await readBody(req)) as {
+          bvid?: string;
+          category?: string;
+          vote?: number;
+          privateId?: string;
+        };
+        const bvid = body.bvid ?? '';
+        const category = body.category ?? '';
+        const vote = body.vote ?? 0;
+        const privateId = body.privateId ?? '';
+        if (!BVID_RE.test(bvid) || !CATEGORIES.has(category) || (vote !== 1 && vote !== -1)) {
+          sendJson(res, 400, { error: 'invalid vote payload' });
+          return;
+        }
+        if (privateId.length < 32) {
+          sendJson(res, 400, { error: 'invalid privateId' });
+          return;
+        }
+        // 一人一票可改票：UNIQUE(bvid, category, public_id) + REPLACE
+        db.prepare(
+          `INSERT INTO votes (bvid, category, public_id, vote, created_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(bvid, category, public_id)
+           DO UPDATE SET vote = excluded.vote, created_at = excluded.created_at`,
+        ).run(bvid, category, sha256(privateId), vote, Date.now());
+        sendJson(res, 200, { ok: true });
+      } catch {
+        sendJson(res, 400, { error: 'bad request' });
+      }
+      return;
+    }
+
+    // GET /database.json —— 全量发布（ADR-0005：可接管性）
+    if (req.method === 'GET' && url.pathname === '/database.json') {
+      const subs = db
+        .prepare(
+          `SELECT bvid, category, reason, evidence, claimed_lv6, created_at FROM submissions`,
+        )
+        .all() as unknown as Array<{
+        bvid: string;
+        category: string;
+        reason: string;
+        evidence: string;
+        claimed_lv6: number;
+        created_at: number;
+      }>;
+      const votes = db
+        .prepare(`SELECT bvid, category, public_id, vote, created_at FROM votes`)
+        .all();
+      sendJson(res, 200, {
+        format: 'bilimark-database/v0',
+        exportedAt: new Date().toISOString(),
+        note: '不含任何可识别个人身份的信息（public_id 为单向哈希）',
+        submissions: subs,
+        votes,
+      });
+      return;
+    }
+
+    // ---------- 管理端点（X-Admin-Key；未配置 ADMIN_KEY 时一律 404 不暴露存在）----------
+    if (url.pathname.startsWith('/api/admin/')) {
+      if (!ADMIN_KEY || req.headers['x-admin-key'] !== ADMIN_KEY) {
+        sendJson(res, 404, { error: 'not found' });
+        return;
+      }
+      // claimed-Lv6 清单：GOVERNANCE.md 的低频抽样核查用
+      if (req.method === 'GET' && url.pathname === '/api/admin/claimed-lv6') {
+        const items = db
+          .prepare(
+            `SELECT id, bvid, category, reason, public_id, created_at
+             FROM submissions WHERE claimed_lv6 = 1 ORDER BY created_at DESC`,
+          )
+          .all();
+        sendJson(res, 200, { items });
+        return;
+      }
+      if (
+        req.method === 'POST' &&
+        (url.pathname === '/api/admin/shadowban' || url.pathname === '/api/admin/unshadowban')
+      ) {
+        try {
+          const body = JSON.parse(await readBody(req)) as {
+            publicId?: string;
+            note?: string;
+          };
+          const publicId = body.publicId ?? '';
+          if (!/^[0-9a-f]{64}$/.test(publicId)) {
+            sendJson(res, 400, { error: 'publicId must be sha256 hex' });
+            return;
+          }
+          if (url.pathname.endsWith('/shadowban')) {
+            db.prepare(
+              `INSERT INTO shadowbans (public_id, note, created_at) VALUES (?, ?, ?)
+               ON CONFLICT(public_id) DO UPDATE SET note = excluded.note`,
+            ).run(publicId, body.note ?? '', Date.now());
+          } else {
+            db.prepare(`DELETE FROM shadowbans WHERE public_id = ?`).run(publicId);
+          }
+          sendJson(res, 200, { ok: true });
+        } catch {
+          sendJson(res, 400, { error: 'bad request' });
+        }
+        return;
+      }
+      sendJson(res, 404, { error: 'not found' });
+      return;
+    }
+
+    sendJson(res, 404, { error: 'not found' });
+  })().catch(() => {
+    try {
+      sendJson(res, 500, { error: 'internal error' });
+    } catch {
+      // 已响应过则忽略
+    }
+  });
+});
+
+server.listen(PORT, () => {
+  console.log(`[BiliMark server] listening on http://127.0.0.1:${PORT}`);
+});

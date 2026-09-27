@@ -1,0 +1,75 @@
+{
+  "BV1Mock00001": {
+    "bvid": "BV1Mock00001",
+    "entries": [
+      {
+        "category": "ai_low_effort",
+        "status": "confirmed",
+        "confirmCount": 3,
+        "againstCount": 0,
+        "reason": "封面一张图，正文为 AI 配音朗读文案，信息量为零，典型的凑时长低创。",
+        "evidence": ["https://example.com/evidence/1"]
+      }
+    ]
+  },
+  "BV1Mock00002": {
+    "bvid": "BV1Mock00002",
+    "entries": [
+      {
+        "category": "clickbait",
+        "status": "confirmed",
+        "confirmCount": 5,
+        "againstCount": 1,
+        "reason": "标题承诺「完整教程」，正片只有 40 秒预告，其余为引流内容。",
+        "evidence": ["https://example.com/evidence/2"]
+      }
+    ]
+  },
+  "BV1Mock00003": {
+    "bvid": "BV1Mock00003",
+    "entries": [
+      {
+        "category": "misinformation",
+        "status": "confirmed",
+        "confirmCount": 4,
+        "againstCount": 0,
+        "reason": "引用的数据来源无法核实，与官方公开数据矛盾。",
+        "evidence": ["https://example.com/evidence/3a", "https://example.com/evidence/3b"]
+      }
+    ]
+  },
+  "BV1Mock00004": {
+    "bvid": "BV1Mock00004",
+    "entries": [
+      {
+        "category": "ai_low_effort",
+        "status": "pending",
+        "confirmCount": 1,
+        "againstCount": 0,
+        "reason": "提交者备注：疑似 AI 批量生成的解说视频。",
+        "evidence": []
+      }
+    ]
+  },
+  "BV1Mock00005": {
+    "bvid": "BV1Mock00005",
+    "entries": [
+      {
+        "category": "clickbait",
+        "status": "confirmed",
+        "confirmCount": 7,
+        "againstCount": 2,
+        "reason": "封面与标题均为拼接的争议性表述，正片内容与承诺完全无关。",
+        "evidence": ["https://example.com/evidence/5"]
+      },
+      {
+        "category": "ai_low_effort",
+        "status": "confirmed",
+        "confirmCount": 3,
+        "againstCount": 0,
+        "reason": "素材复用同一图库，文案为模板化 AI 生成。",
+        "evidence": ["https://example.com/evidence/5b"]
+      }
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "bilimark-server",
+  "version": "0.3.0",
+  "private": true,
+  "description": "BiliMark 轻量 API 服务器（node:http + node:sqlite，零运行时依赖）",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc && node dist/index.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.5.4"
+  }
+}

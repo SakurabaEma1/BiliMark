@@ -1,0 +1,20 @@
+{
+  "name": "bilimark",
+  "version": "0.1.0",
+  "private": true,
+  "description": "哔哩哔哩社区低质视频标记插件（开发代号 BiliMark）",
+  "scripts": {
+    "dev": "webpack --mode development --watch",
+    "build": "webpack --mode production"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.268",
+    "copy-webpack-plugin": "^12.0.2",
+    "css-loader": "^7.1.2",
+    "style-loader": "^4.0.0",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.5.4",
+    "webpack": "^5.94.0",
+    "webpack-cli": "^5.1.4"
+  }
+}

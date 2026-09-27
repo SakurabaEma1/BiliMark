@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "小电视避雷针（开发版）",
+  "version": "0.3.0",
+  "description": "社区众包标记低质量视频（AI低创/标题党/造谣），观看前非阻断提醒，减少时间浪费。",
+  "permissions": ["storage", "alarms"],
+  "content_scripts": [
+    {
+      "matches": ["https://www.bilibili.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "BiliMark 哔哩标记"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
