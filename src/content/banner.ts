@@ -5,6 +5,8 @@ import { buildTitleTiers, mountSelfHealing } from './mount';
 
 export interface BannerHandle {
   destroy(): void;
+  /** 面板当前是否打开（投票后 refresh 重建角标时据此恢复面板） */
+  isPanelOpen(): boolean;
 }
 
 export interface BannerOptions {
@@ -13,6 +15,8 @@ export interface BannerOptions {
   bvid?: string;
   /** UP 主信息（查成分外链用；来自播放页 __INITIAL_STATE__） */
   up?: { mid: number; name: string };
+  /** 投票后数据刷新重建角标时保持面板打开（避免用户点完 👍 面板被销毁关闭） */
+  reopenPanel?: boolean;
   /** 投票回调：POST 到服务器后由调用方刷新数据 */
   onVote?: (category: MarkingEntry['category'], vote: 1 | -1) => void;
 }
@@ -113,7 +117,9 @@ export function createBanner(
   const tiers = buildTitleTiers(pill, anchor, (tier) => console.info(tierLogs[tier]));
   const stopMount = mountSelfHealing(pill, tiers);
 
-  return { destroy };
+  if (opts.reopenPanel) openPanel();
+
+  return { destroy, isPanelOpen: () => !destroyed && !panel.hidden };
 }
 
 function buildDetails(

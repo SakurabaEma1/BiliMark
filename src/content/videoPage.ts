@@ -31,7 +31,7 @@ export class VideoPageController {
     void this.enter(location.href);
   }
 
-  private async enter(url: string): Promise<void> {
+  private async enter(url: string, reopenPanel = false): Promise<void> {
     const bvid = parseBvidFromUrl(url);
     if (!bvid) return;
     const myToken = ++this.token;
@@ -45,7 +45,9 @@ export class VideoPageController {
       return;
     }
     if (isSensitiveZone(meta.tid, meta.tidV2)) {
-      console.info(`[BiliMark] 高敏分区（${meta.tname || '未知'}），不启用标记与提醒（分区隔离墙）`);
+      console.info(
+        `[BiliMark] 高敏分区（tid=${meta.tid ?? '-'}${meta.tidV2 ? `/v2 ${meta.tidV2}` : ''}），不启用标记与提醒（分区隔离墙）`,
+      );
       return;
     }
 
@@ -79,17 +81,19 @@ export class VideoPageController {
     this.banner = createBanner(vm.entries, anchor as HTMLElement, {
       bvid,
       up: meta.upMid !== null ? { mid: meta.upMid, name: meta.upName } : undefined,
+      reopenPanel,
       onVote: (category, v) => {
         void this.vote(bvid, category, v);
       },
     });
   }
 
-  /** 面板内 👍/👎：POST 到服务器后刷新聚合结果 */
+  /** 面板内 👍/👎：POST 到服务器后刷新聚合结果；面板原本打开则重建后保持打开 */
   private async vote(bvid: string, category: CategoryKey, v: 1 | -1): Promise<void> {
+    const reopen = this.banner?.isPanelOpen() ?? false;
     const privateId = await getOrCreatePrivateId();
     await postVote({ bvid, category, vote: v, privateId });
-    this.refresh();
+    this.refresh(reopen);
   }
 
   stop(): void {
@@ -100,8 +104,8 @@ export class VideoPageController {
     this.banner = null;
   }
 
-  /** 本地提交后刷新当前视频的标记数据（提交反馈闭环） */
-  refresh(): void {
-    void this.enter(location.href);
+  /** 本地提交后刷新当前视频的标记数据（提交反馈闭环）；reopenPanel 保持理由面板打开 */
+  refresh(reopenPanel = false): void {
+    void this.enter(location.href, reopenPanel);
   }
 }
