@@ -239,6 +239,30 @@ test('全量发布 database.json：格式、列齐全、不含明文身份', asy
   assert.ok(!('public_id' in s), '全量发布不导出 public_id（单向哈希也不导出）');
 });
 
+test('撤回：DELETE 删除提交后可重新提交（不再 409）', async () => {
+  const bvid = newBvid();
+  const pid = newId();
+  assert.equal((await submitSimple(bvid, pid)).status, 200);
+  const del = await fetch(BASE + '/api/markings', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bvid, category: CAT, privateId: pid }),
+  });
+  assert.equal(del.status, 200);
+  assert.deepEqual(await del.json(), { ok: true, deleted: 1 });
+
+  // 无记录时重复 DELETE：deleted=0 仍 200（幂等，客户端视为撤回完成）
+  const del2 = await fetch(BASE + '/api/markings', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bvid, category: CAT, privateId: pid }),
+  });
+  assert.equal(del2.status, 200);
+  assert.equal((await del2.json()).deleted, 0);
+
+  assert.equal((await submitSimple(bvid, pid)).status, 200, '撤回后重新提交应成功');
+});
+
 test('GET /api/markings：bvid 校验与批量上限不 500', async () => {
   assert.deepEqual((await get('/api/markings?bvids=BAD')).body.markings, {});
   const fifty = Array.from({ length: 60 }, () => newBvid()).join(',');

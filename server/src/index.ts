@@ -221,7 +221,7 @@ function aggregate(bvids: string[], asHash: string | null): Record<string, unkno
 // ---------- HTTP 骨架 ----------
 function cors(res: ServerResponse): void {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }
 
@@ -367,6 +367,31 @@ const server = createServer((req, res) => {
           return;
         }
         sendJson(res, 200, { ok: true });
+      } catch {
+        sendJson(res, 400, { error: 'bad request' });
+      }
+      return;
+    }
+
+    // DELETE /api/markings —— 撤回（CONTEXT.md「提交」：撤回后可重新提交）
+    if (req.method === 'DELETE' && url.pathname === '/api/markings') {
+      try {
+        const body = JSON.parse(await readBody(req)) as {
+          bvid?: string;
+          category?: string;
+          privateId?: string;
+        };
+        const bvid = body.bvid ?? '';
+        const category = body.category ?? '';
+        const privateId = body.privateId ?? '';
+        if (!BVID_RE.test(bvid) || !CATEGORIES.has(category) || privateId.length < 32) {
+          sendJson(res, 400, { error: 'invalid payload' });
+          return;
+        }
+        const info = db
+          .prepare(`DELETE FROM submissions WHERE bvid = ? AND category = ? AND public_id = ?`)
+          .run(bvid, category, sha256(privateId));
+        sendJson(res, 200, { ok: true, deleted: Number(info.changes) }); // 0 = 服务器本无此条，同样视为撤回完成
       } catch {
         sendJson(res, 400, { error: 'bad request' });
       }

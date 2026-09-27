@@ -1,8 +1,8 @@
 import { parseBvidFromUrl } from './bilibili/urls';
-import { readVideoMeta, type VideoMeta } from './bilibili/videoMeta';
+import { readVideoMeta } from './bilibili/videoMeta';
 import { getOwnLevel } from '../core/bilibiliAccount';
 import { getOrCreatePrivateId } from '../core/privateId';
-import { postMarking } from '../core/api';
+import { postMarking, deleteMarking } from '../core/api';
 import {
   addSubmission,
   getSubmissionsForBvid,
@@ -35,7 +35,6 @@ const REASON_PRESETS: Record<CategoryKey, string[]> = {
 
 let panel: HTMLElement | null = null;
 let currentBvid: string | null = null;
-let currentMeta: VideoMeta | null = null;
 let onChanged: () => void = () => {};
 let outsideClickHandler: ((e: MouseEvent) => void) | null = null;
 
@@ -50,7 +49,6 @@ export function toggleSubmissionPanel(
     return;
   }
   currentBvid = parseBvidFromUrl(location.href);
-  currentMeta = readVideoMeta(); // 提交时快照分区/UP 元数据（入口仅在非高敏分区存在）
   if (!panel) {
     panel = buildPanelShell();
     document.body.appendChild(panel);
@@ -162,6 +160,17 @@ function renderManage(body: HTMLElement, subs: StoredSubmission[]): void {
     retractBtn.addEventListener('click', () => {
       void (async () => {
         if (!currentBvid) return;
+        const privateId = await getOrCreatePrivateId();
+        const deleted = await deleteMarking({
+          bvid: currentBvid,
+          category: s.category,
+          privateId,
+        });
+        if (!deleted) {
+          // 服务器不可达时不删本地：否则「本地已撤回、服务器仍计数」，且重提会 409
+          retractBtn.textContent = '撤回失败，点击重试';
+          return;
+        }
         await retractSubmission(currentBvid, s.category);
         closePanel();
         onChanged();
@@ -289,6 +298,8 @@ async function handleSubmit(
   const level = await getOwnLevel();
   const claimedLv6 = level !== null && level >= 6;
   const privateId = await getOrCreatePrivateId(); // 匿名凭证仅存本机，服务器只见其哈希
+  // 提交时快照分区/UP 元数据（入口仅在非高敏分区存在；readVideoMeta 按 bvid 缓存）
+  const meta = await readVideoMeta(currentBvid);
   const { ok, status } = await postMarking({
     bvid: currentBvid,
     category: selectedCat,
@@ -296,10 +307,10 @@ async function handleSubmit(
     evidence: urls,
     privateId,
     claimedLv6,
-    region: currentMeta?.tid ?? null,
-    regionV2: currentMeta?.tidV2 ?? null,
-    upMid: currentMeta?.upMid ?? null,
-    upName: currentMeta?.upName ?? '',
+    region: meta?.tid ?? null,
+    regionV2: meta?.tidV2 ?? null,
+    upMid: meta?.upMid ?? null,
+    upName: meta?.upName ?? '',
   });
   const synced = ok || status === 409; // 409 = 该标记已在社区，视为同步完成
   const submission: StoredSubmission = {
@@ -309,10 +320,10 @@ async function handleSubmit(
     evidence: urls,
     createdAt: Date.now(),
     claimedLv6,
-    region: currentMeta?.tid ?? null,
-    regionV2: currentMeta?.tidV2 ?? null,
-    upMid: currentMeta?.upMid ?? null,
-    upName: currentMeta?.upName ?? '',
+    region: meta?.tid ?? null,
+    regionV2: meta?.tidV2 ?? null,
+    upMid: meta?.upMid ?? null,
+    upName: meta?.upName ?? '',
     synced, // 已同步的不进待同步队列，避免 background 一小时后无谓重发
   };
   await addSubmission(submission); // 本地自见记录；未同步时由 background 定时重试

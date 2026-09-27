@@ -82,3 +82,27 @@ export async function postVote(payload: VotePayload): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * 撤回：删除服务器上本人在该 (视频,分类) 的提交。
+ * 返回 false 仅当网络失败——此时调用方应保留本地记录让用户重试，
+ * 否则会出现「本地已撤回、服务器仍计数」的残留。
+ */
+export async function deleteMarking(payload: {
+  bvid: string;
+  category: CategoryKey;
+  privateId: string;
+}): Promise<boolean> {
+  try {
+    const base = await getApiBase();
+    const res = await fetch(`${base}/api/markings`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(3000),
+    });
+    return res.ok; // 200（含 deleted:0 本无此条）均视为撤回完成
+  } catch {
+    return false;
+  }
+}
