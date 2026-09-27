@@ -114,13 +114,23 @@ export function paintBadge(card: HTMLElement, vm: VideoMarkings): void {
   label.className = 'bmk-chip__label';
   label.textContent = `⚠ ${categoryLabel(entries[0].category)} · ${entries[0].confirmCount}`;
 
-  chip.append(label, buildTip(entries));
+  chip.append(label, buildTip(entries, vm.upWarning));
   card.appendChild(chip);
 }
 
-function buildTip(entries: MarkingEntry[]): HTMLElement {
+function buildTip(entries: MarkingEntry[], upWarning?: VideoMarkings['upWarning']): HTMLElement {
   const tip = document.createElement('div');
   tip.className = 'bmk-chip__tip';
+
+  // UP主警示（派生聚合，CONTEXT.md）：悬浮详情顶部一行原始计数
+  if (upWarning && upWarning.categories.length > 0) {
+    for (const c of upWarning.categories) {
+      const warn = document.createElement('div');
+      warn.className = 'bmk-chip__tip-upwarning';
+      warn.textContent = `⚠ 该UP主有 ${c.count} 个视频被确认「${categoryLabel(c.category)}」`;
+      tip.append(warn);
+    }
+  }
 
   for (const e of entries) {
     const line = document.createElement('div');

@@ -263,6 +263,64 @@ test('撤回：DELETE 删除提交后可重新提交（不再 409）', async () 
   assert.equal((await submitSimple(bvid, pid)).status, 200, '撤回后重新提交应成功');
 });
 
+test('UP主警示派生：门槛边界/分类隔离/撤回消失/影子封禁不计入', async () => {
+  const upMid = 777001;
+  const seeder = newId();
+  for (let i = 0; i < 3; i++) {
+    assert.equal((await submitSimple(newBvid(), seeder, { upMid })).status, 200); // 毕业
+  }
+
+  // 2 个视频 confirmed（各 2 票 + 提交者 = 3）→ 低于门槛 3 不警示
+  const targets = [];
+  for (let i = 0; i < 2; i++) {
+    const bvid = newBvid();
+    assert.equal((await submitSimple(bvid, seeder, { upMid, upName: '测试UP' })).status, 200);
+    await vote(bvid, CAT, 1, newId());
+    await vote(bvid, CAT, 1, newId());
+    targets.push(bvid);
+  }
+  let body = (await get(`/api/markings?bvids=${targets.join(',')}`)).body;
+  assert.equal(body.upWarnings['777001']?.categories?.[CAT] ?? 0, 0, '2 个视频 < 门槛不警示');
+  assert.equal(body.markings[targets[0]][0].upMid, 777001, '条目带 upMid');
+  assert.equal(body.markings[targets[0]][0].upName, '测试UP');
+
+  // 第 3 个视频 confirmed → 达门槛
+  const third = newBvid();
+  assert.equal((await submitSimple(third, seeder, { upMid, upName: '测试UP' })).status, 200);
+  await vote(third, CAT, 1, newId());
+  await vote(third, CAT, 1, newId());
+  targets.push(third);
+
+  body = (await get(`/api/markings?bvids=${targets.join(',')}`)).body;
+  assert.equal(body.upWarnings['777001'].categories[CAT], 3);
+  assert.equal(body.upWarnings['777001'].name, '测试UP');
+
+  // 分类隔离：另一分类 1 个视频 confirmed，不与 CAT 合并、自身低于门槛不输出
+  const other = newBvid();
+  await post('/api/markings', { bvid: other, category: 'clickbait', reason: '测试理由：标题党分类隔离用', evidence: [], privateId: seeder, upMid });
+  await vote(other, 'clickbait', 1, newId());
+  await vote(other, 'clickbait', 1, newId());
+  body = (await get(`/api/markings?bvids=${[...targets, other].join(',')}`)).body;
+  assert.equal(body.upWarnings['777001'].categories[CAT], 3, '不同分类不合并');
+  assert.equal(body.upWarnings['777001'].categories.clickbait, undefined, '低于门槛的分类不输出');
+
+  // 撤回一条 → 降到门槛下 → 警示消失
+  const del = await fetch(BASE + '/api/markings', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bvid: third, category: CAT, privateId: seeder }),
+  });
+  assert.equal(del.status, 200);
+  body = (await get(`/api/markings?bvids=${targets.join(',')}`)).body;
+  assert.equal(body.upWarnings['777001']?.categories?.[CAT] ?? 0, 0, '撤回后 2 个 < 门槛 → 不输出警示');
+
+  // 影子封禁该 UP 的提交者 → 内容全网隐藏，警示不计数
+  await post('/api/admin/shadowban', { publicId: sha256(seeder), note: 'upwarning test' }, { 'X-Admin-Key': ADMIN_KEY });
+  body = (await get(`/api/markings?bvids=${targets.join(',')}`)).body;
+  assert.equal(body.upWarnings['777001'] ?? undefined, undefined, '影子封禁后不计入');
+  await post('/api/admin/unshadowban', { publicId: sha256(seeder) }, { 'X-Admin-Key': ADMIN_KEY });
+});
+
 test('GET /api/markings：bvid 校验与批量上限不 500', async () => {
   assert.deepEqual((await get('/api/markings?bvids=BAD')).body.markings, {});
   const fifty = Array.from({ length: 60 }, () => newBvid()).join(',');

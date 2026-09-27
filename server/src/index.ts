@@ -66,6 +66,7 @@ const CONFIRM_THRESHOLD = 3; // 净票 ≥ 3 → 已确认
 const HIDE_THRESHOLD = -2; // 净票 ≤ -2 → 驳回（隐藏）
 const NOVICE_SUBMISSIONS = 3; // 新手期：公开 ID 的前 3 条提交（GOVERNANCE.md）
 const NOVICE_MULTIPLIER = 2; // 新手期确认阈值倍数（全新手标记需 6 票）
+const UP_WARNING_THRESHOLD = 3; // UP主警示：同 UP 同分类「已确认」视频数门槛（CONTEXT.md，调优待定项）
 const ADMIN_KEY = process.env.ADMIN_KEY ?? ''; // 未设置则管理端点不可达（404，不暴露存在）
 const CATEGORIES = new Set(['ai_low_effort', 'clickbait', 'misinformation']);
 const BVID_RE = /^BV[0-9A-Za-z]{10}$/;
@@ -90,6 +91,8 @@ interface SubRow {
   evidence: string;
   public_id: string;
   claimed_lv6: number;
+  up_mid: number | null;
+  up_name: string | null;
   created_at: number;
 }
 interface VoteRow {
@@ -126,11 +129,18 @@ interface Agg {
   evidence: Set<string>;
 }
 
-function aggregate(bvids: string[], asHash: string | null): Record<string, unknown[]> {
+function aggregate(
+  bvids: string[],
+  asHash: string | null,
+  upExpanded = false,
+): {
+  markings: Record<string, unknown[]>;
+  upWarnings: Record<string, { name: string; categories: Record<string, number> }>;
+} {
   const placeholders = bvids.map(() => '?').join(',');
   const subs = db
     .prepare(
-      `SELECT id, bvid, category, reason, evidence, public_id, claimed_lv6, created_at
+      `SELECT id, bvid, category, reason, evidence, public_id, claimed_lv6, up_mid, up_name, created_at
        FROM submissions WHERE bvid IN (${placeholders}) ORDER BY created_at ASC`,
     )
     .all(...bvids) as unknown as SubRow[];
@@ -201,21 +211,78 @@ function aggregate(bvids: string[], asHash: string | null): Record<string, unkno
   }
 
   const out: Record<string, unknown[]> = {};
+  // UP主警示（CONTEXT.md「UP主警示」）：同 UP 同分类「已确认」视频数达门槛即警示。
+  // 纯派生聚合，不可提交、不折算分数、只展示原始计数；up_mid 缺失的历史提交不参与。
+  const upOf = new Map<string, { upMid: number; upName: string }>();
+  for (const s of visSubs) {
+    if (s.up_mid === null || s.up_mid === undefined) continue;
+    const key = `${s.bvid}|${s.category}`;
+    if (!upOf.has(key)) upOf.set(key, { upMid: s.up_mid, upName: s.up_name ?? '' });
+  }
+  const upCounts = new Map<number, { name: string; categories: Map<string, number> }>();
   for (const [key, agg] of byKey) {
     if (agg.net <= HIDE_THRESHOLD) continue; // 驳回：对全网隐藏
     const [bvid, category] = key.split('|');
     // 新手期乘法器：全部贡献者都在新手期 → 阈值翻倍（GOVERNANCE.md）
     const threshold = agg.allNovice ? CONFIRM_THRESHOLD * NOVICE_MULTIPLIER : CONFIRM_THRESHOLD;
+    const confirmed = agg.net >= threshold;
+    const up = upOf.get(key);
+    if (confirmed && up) {
+      const rec = upCounts.get(up.upMid) ?? { name: up.upName, categories: new Map<string, number>() };
+      rec.categories.set(category, (rec.categories.get(category) ?? 0) + 1);
+      upCounts.set(up.upMid, rec);
+    }
     (out[bvid] ??= []).push({
       category,
-      status: agg.net >= threshold ? 'confirmed' : 'pending',
+      status: confirmed ? 'confirmed' : 'pending',
       confirmCount: agg.net,
       againstCount: agg.against,
       reason: agg.reasons.sort((a, b) => b.at - a.at)[0]?.reason ?? '',
       evidence: [...agg.evidence].slice(0, 3),
+      upMid: up?.upMid,
+      upName: up?.upName,
     });
   }
-  return out;
+
+  // 只输出达到门槛的 UP 警示；影子封禁/驳回天然不计入（visSubs 与 HIDE_THRESHOLD 已过滤）。
+  // 关键：警示按 UP 名下【全库】视频统计，而非本次查询窗口——否则播放页单视频查询永远算不满。
+  // 做法：查询涉及的 up → 找出其名下全部 bvid → 递归 aggregate 一轮（upExpanded=true 不再扩展）。
+  const buildUpWarnings = (): Record<
+    string,
+    { name: string; categories: Record<string, number> }
+  > => {
+    const upWarnings: Record<string, { name: string; categories: Record<string, number> }> = {};
+    for (const [mid, rec] of upCounts) {
+      const cats: Record<string, number> = {};
+      for (const [c, n] of rec.categories) {
+        if (n >= UP_WARNING_THRESHOLD) cats[c] = n;
+      }
+      if (Object.keys(cats).length > 0) upWarnings[String(mid)] = { name: rec.name, categories: cats };
+    }
+    return upWarnings;
+  };
+
+  let upWarnings: Record<string, { name: string; categories: Record<string, number> }> = {};
+  if (!upExpanded) {
+    const upMids = [
+      ...new Set(visSubs.map((s) => s.up_mid).filter((m): m is number => m !== null && m !== undefined)),
+    ];
+    if (upMids.length > 0) {
+      const ph = upMids.map(() => '?').join(',');
+      const rows = db
+        .prepare(`SELECT DISTINCT bvid FROM submissions WHERE up_mid IN (${ph}) LIMIT 500`)
+        .all(...upMids) as unknown as Array<{ bvid: string }>;
+      const allBvids = rows.map((r) => r.bvid);
+      if (allBvids.some((b) => !bvids.includes(b))) {
+        upWarnings = aggregate(allBvids, asHash, true).upWarnings;
+      } else {
+        upWarnings = buildUpWarnings();
+      }
+    }
+  } else {
+    upWarnings = buildUpWarnings();
+  }
+  return { markings: out, upWarnings };
 }
 
 // ---------- HTTP 骨架 ----------
@@ -282,10 +349,10 @@ const server = createServer((req, res) => {
       const asRaw = url.searchParams.get('as') ?? '';
       const as = /^[0-9a-f]{64}$/.test(asRaw) ? asRaw : null;
       if (bvids.length === 0) {
-        sendJson(res, 200, { markings: {} });
+        sendJson(res, 200, { markings: {}, upWarnings: {} });
         return;
       }
-      sendJson(res, 200, { markings: aggregate(bvids, as) });
+      sendJson(res, 200, aggregate(bvids, as));
       return;
     }
 

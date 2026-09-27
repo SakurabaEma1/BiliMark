@@ -25,12 +25,28 @@ export class ApiProvider implements MarkProvider {
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as {
-        markings: Record<string, MarkingEntry[]>;
+        markings: Record<string, Array<MarkingEntry & { upMid?: number }>>;
+        upWarnings?: Record<string, { name?: string; categories: Record<string, number> }>;
       };
       const map = new Map<string, VideoMarkings>();
       for (const bvid of bvids) {
         const entries = data.markings?.[bvid];
-        if (entries && entries.length > 0) map.set(bvid, { bvid, entries });
+        if (entries && entries.length > 0) {
+          const vm: VideoMarkings = { bvid, entries };
+          // UP主警示派生（CONTEXT.md）：该视频 UP 触发门槛时挂到视频级标记上
+          const upMid = entries.find((e) => typeof e.upMid === 'number')?.upMid;
+          const warn = upMid !== undefined ? data.upWarnings?.[String(upMid)] : undefined;
+          if (warn) {
+            vm.upWarning = {
+              name: warn.name,
+              categories: Object.entries(warn.categories).map(([category, count]) => ({
+                category: category as MarkingEntry['category'],
+                count,
+              })),
+            };
+          }
+          map.set(bvid, vm);
+        }
       }
       return map;
     } catch {

@@ -69,6 +69,20 @@
 .bmk-details__item {
   padding: 6px 0;
 }
+/* UP主警示（派生聚合）：面板顶部与 feed 悬浮详情的原始计数行 */
+.bmk-details__upwarning {
+  margin-bottom: 4px;
+  padding: 4px 6px;
+  border-left: 3px solid #ff7a7a;
+  background: rgba(255, 122, 122, 0.08);
+  color: #ff9a9a;
+  font-weight: 600;
+}
+.bmk-chip__tip-upwarning {
+  color: #ff9a9a;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
 .bmk-details__item--pending {
   opacity: 0.65;
 }

@@ -81,6 +81,7 @@ export class VideoPageController {
     this.banner = createBanner(vm.entries, anchor as HTMLElement, {
       bvid,
       up: meta.upMid !== null ? { mid: meta.upMid, name: meta.upName } : undefined,
+      upWarning: vm.upWarning,
       reopenPanel,
       onVote: (category, v) => {
         void this.vote(bvid, category, v);

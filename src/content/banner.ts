@@ -1,4 +1,4 @@
-import type { MarkingEntry } from '../core/types';
+import type { MarkingEntry, UpWarning } from '../core/types';
 import { categoryLabel } from '../core/types';
 import { STR } from '../core/strings';
 import { buildTitleTiers, mountSelfHealing } from './mount';
@@ -15,6 +15,8 @@ export interface BannerOptions {
   bvid?: string;
   /** UP 主信息（查成分外链用；来自播放页 __INITIAL_STATE__） */
   up?: { mid: number; name: string };
+  /** UP主警示（派生聚合达门槛时存在）：理由面板顶部展示原始计数 */
+  upWarning?: UpWarning;
   /** 投票后数据刷新重建角标时保持面板打开（避免用户点完 👍 面板被销毁关闭） */
   reopenPanel?: boolean;
   /** 投票回调：POST 到服务器后由调用方刷新数据 */
@@ -129,6 +131,18 @@ function buildDetails(
 ): HTMLElement {
   const box = document.createElement('div');
   box.className = 'bmk-pill__panel';
+
+  // UP主警示（派生聚合）：面板顶部原始计数，不可提交、不折算分数（CONTEXT.md）
+  if (!demo && opts.upWarning && opts.upWarning.categories.length > 0) {
+    const warnBox = document.createElement('div');
+    warnBox.className = 'bmk-details__upwarning';
+    for (const c of opts.upWarning.categories) {
+      const line = document.createElement('div');
+      line.textContent = `⚠ 该UP主名下已有 ${c.count} 个视频被社区确认「${categoryLabel(c.category)}」`;
+      warnBox.append(line);
+    }
+    box.append(warnBox);
+  }
 
   for (const e of entries) {
     const item = document.createElement('div');
