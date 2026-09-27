@@ -287,6 +287,30 @@
 .bmk-panel__evidence {
   margin-bottom: 4px;
 }
+/* 常用理由预选项：选分类后出现，点击填入理由栏 */
+.bmk-panel__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 0;
+}
+.bmk-panel__presets:empty {
+  display: none;
+}
+.bmk-panel__preset {
+  padding: 2px 8px;
+  border: 1px dashed #555555;
+  border-radius: 10px;
+  background: transparent;
+  color: #aaaaaa;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.bmk-panel__preset:hover {
+  border-color: #ffaa00;
+  color: #ffaa00;
+}
 .bmk-panel__hint {
   color: #9a9a9a;
   margin-top: 6px;

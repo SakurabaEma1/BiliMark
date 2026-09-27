@@ -16,5 +16,5 @@ export const STR = {
   appealNote: '该视频的 UP 主如认为标记不实，可',
   appealLinkText: '邮件申诉复核',
   appealUrl:
-    'mailto:z3274510858@gmail.com?subject=%E5%B0%8F%E7%94%B5%E8%A7%86%E9%81%BF%E9%9B%B7%E9%92%88%E7%94%B3%E8%AF%89&body=%E8%A7%86%E9%A2%91BVID%EF%BC%9A%0D%0A%E8%AF%B4%E6%98%8E%E7%90%86%E7%94%B1%EF%BC%9A',
+    'mailto:3274510858@qq.com?subject=%E5%B0%8F%E7%94%B5%E8%A7%86%E9%81%BF%E9%9B%B7%E9%92%88%E7%94%B3%E8%AF%89&body=%E8%A7%86%E9%A2%91BVID%EF%BC%9A%0D%0A%E8%AF%B4%E6%98%8E%E7%90%86%E7%94%B1%EF%BC%9A',
 };

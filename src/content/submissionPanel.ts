@@ -18,6 +18,21 @@ const CATS: Array<{ key: CategoryKey; label: string }> = [
   { key: 'misinformation', label: '造谣' },
 ];
 
+/** 常用理由预选项：选分类后给出，点击填入理由栏（可再编辑），降低提交成本 */
+const REASON_PRESETS: Record<CategoryKey, string[]> = {
+  ai_low_effort: [
+    '一张图配 AI 配音念稿，信息量为零',
+    'AI 生成画面 + 机械配音拼凑时长，无实义内容',
+    '批量生产的 AI 内容农场视频',
+  ],
+  clickbait: [
+    '标题承诺的内容正片完全没有',
+    '封面与标题夸大误导，实际内容名不副实',
+    '标题断章取义，与正片内容不符',
+  ],
+  misinformation: ['传播可证伪的不实信息，详见证据链接', '关键事实与权威来源矛盾（见证据）'],
+};
+
 let panel: HTMLElement | null = null;
 let currentBvid: string | null = null;
 let currentMeta: VideoMeta | null = null;
@@ -168,8 +183,18 @@ function renderForm(body: HTMLElement): void {
   const catRow = document.createElement('div');
   catRow.className = 'bmk-panel__cats';
   const catButtons: HTMLButtonElement[] = [];
+  const presetsRow = document.createElement('div');
+  presetsRow.className = 'bmk-panel__presets';
+
+  const reasonLabel = smallLabel('理由（必填，≥5 字）');
+  const reason = document.createElement('textarea');
+  reason.className = 'bmk-panel__reason';
+  reason.rows = 3;
+  reason.placeholder = '为什么低质？可从下方常用理由中选一条再修改';
+
   for (const cat of CATS) {
     const btn = document.createElement('button');
+    btn.type = 'button';
     btn.className = 'bmk-panel__cat';
     btn.dataset.cat = cat.key;
     btn.textContent = cat.label;
@@ -177,16 +202,11 @@ function renderForm(body: HTMLElement): void {
       selectedCat = cat.key;
       catButtons.forEach((b) => b.classList.toggle('active', b === btn));
       setEvidenceVisible(body, cat.key === 'misinformation');
+      fillPresets(presetsRow, cat.key, reason);
     });
     catButtons.push(btn);
     catRow.append(btn);
   }
-
-  const reasonLabel = smallLabel('理由（必填，≥5 字）');
-  const reason = document.createElement('textarea');
-  reason.className = 'bmk-panel__reason';
-  reason.rows = 3;
-  reason.placeholder = '为什么低质？例如：一张图配 AI 配音凑时长';
 
   const evidenceLabel = smallLabel('证据链接（必填，多个用空格分隔）');
   evidenceLabel.classList.add('bmk-panel__evidence');
@@ -207,7 +227,24 @@ function renderForm(body: HTMLElement): void {
     void handleSubmit(selectedCat, reason, evidence, hint, body);
   });
 
-  body.append(catRow, reasonLabel, reason, evidenceLabel, evidence, hint, submit);
+  body.append(catRow, reasonLabel, presetsRow, reason, evidenceLabel, evidence, hint, submit);
+}
+
+/** 按分类填充常用理由 chips，点击填入理由栏 */
+function fillPresets(row: HTMLElement, cat: CategoryKey, reason: HTMLTextAreaElement): void {
+  row.replaceChildren();
+  for (const text of REASON_PRESETS[cat]) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'bmk-panel__preset';
+    chip.textContent = text;
+    chip.title = '点击填入，可再编辑';
+    chip.addEventListener('click', () => {
+      reason.value = text;
+      reason.focus();
+    });
+    row.append(chip);
+  }
 }
 
 async function handleSubmit(
