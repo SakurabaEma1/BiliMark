@@ -1,4 +1,5 @@
 import { parseBvidFromUrl } from './bilibili/urls';
+import { readVideoMeta, type VideoMeta } from './bilibili/videoMeta';
 import { getOwnLevel } from '../core/bilibiliAccount';
 import { getOrCreatePrivateId } from '../core/privateId';
 import { postMarking } from '../core/api';
@@ -19,6 +20,7 @@ const CATS: Array<{ key: CategoryKey; label: string }> = [
 
 let panel: HTMLElement | null = null;
 let currentBvid: string | null = null;
+let currentMeta: VideoMeta | null = null;
 let onChanged: () => void = () => {};
 let outsideClickHandler: ((e: MouseEvent) => void) | null = null;
 
@@ -33,6 +35,7 @@ export function toggleSubmissionPanel(
     return;
   }
   currentBvid = parseBvidFromUrl(location.href);
+  currentMeta = readVideoMeta(); // 提交时快照分区/UP 元数据（入口仅在非高敏分区存在）
   if (!panel) {
     panel = buildPanelShell();
     document.body.appendChild(panel);
@@ -256,6 +259,10 @@ async function handleSubmit(
     evidence: urls,
     privateId,
     claimedLv6,
+    region: currentMeta?.tid ?? null,
+    regionV2: currentMeta?.tidV2 ?? null,
+    upMid: currentMeta?.upMid ?? null,
+    upName: currentMeta?.upName ?? '',
   });
   const synced = ok || status === 409; // 409 = 该标记已在社区，视为同步完成
   const submission: StoredSubmission = {
@@ -265,6 +272,10 @@ async function handleSubmit(
     evidence: urls,
     createdAt: Date.now(),
     claimedLv6,
+    region: currentMeta?.tid ?? null,
+    regionV2: currentMeta?.tidV2 ?? null,
+    upMid: currentMeta?.upMid ?? null,
+    upName: currentMeta?.upName ?? '',
     synced, // 已同步的不进待同步队列，避免 background 一小时后无谓重发
   };
   await addSubmission(submission); // 本地自见记录；未同步时由 background 定时重试

@@ -15,6 +15,10 @@ async function syncPending(): Promise<void> {
       evidence: s.evidence,
       privateId,
       claimedLv6: s.claimedLv6,
+      region: s.region ?? null,
+      regionV2: s.regionV2 ?? null,
+      upMid: s.upMid ?? null,
+      upName: s.upName ?? '',
     });
     if (ok || status === 409) await markSynced(s.bvid, s.category, s.createdAt);
   }

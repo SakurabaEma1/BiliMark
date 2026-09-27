@@ -31,6 +31,12 @@ export interface MarkingPayload {
   privateId: string;
   /** 自声明的 B 站等级豁免（Lv6+）；服务器按 GOVERNANCE.md 抽查制对待 */
   claimedLv6?: boolean;
+  /** 分区元数据（v1 tid / v2 tid_v2）：隔离墙防线 + 二期分社区对比的数据基础 */
+  region?: number | null;
+  regionV2?: number | null;
+  /** UP 主元数据（服务器留存，派生 UP警示用） */
+  upMid?: number | null;
+  upName?: string;
 }
 
 export interface VotePayload {

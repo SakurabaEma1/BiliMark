@@ -6,7 +6,7 @@
 
 面向 B 站网页端的浏览器插件（MV3）+ 配套社区服务：**众包标记低质量视频**（AI低创/标题党/造谣），在标题区用非阻断角标提醒，减少给低创贡献播放量。灵感来自 BilibiliSponsorBlock（https://github.com/hanydd/BilibiliSponsorBlock ，**本项目全部文档中的"SB"均指此项目**），但标注对象是**实体级信誉**（视频/UP主）而非时间片段——这是与 SB 的本质区别，所有设计都由此展开。
 
-当前状态（2026-09）：**Slice 3 + 治理实现完成（v0.3）**——提交闭环（常驻入口→页面内面板→撤回重提）、本地+服务器双管线、投票状态机（待确认→已确认≥3→驳回≤-2）、治理落地（新手期×2 / Lv6 自声明豁免 / 影子封禁 / `X-Admin-Key` 管理端点，见 GOVERNANCE.md v0.3.1）、待同步队列（chrome.alarms 每小时重试，409 视为完成）。对外名称**「小电视避雷针」**（manifest/商店/文案用，与 SB 的「小电视空降助手」同理避商标），BiliMark 保留为内部代号。**未部署**（用户暂缓花钱，DEPLOY.md 就绪待执行）、未上架商店。唯一用户 = 项目作者本人。
+当前状态（2026-09）：**Slice 3 + 治理实现完成（v0.3）**——提交闭环（常驻入口→页面内面板→撤回重提）、本地+服务器双管线、投票状态机（待确认→已确认≥3→驳回≤-2）、治理落地（新手期×2 / Lv6 自声明豁免 / 影子封禁 / `X-Admin-Key` 管理端点，见 GOVERNANCE.md v0.3.1）、待同步队列（chrome.alarms 每小时重试，409 视为完成）、**分区隔离墙**（高敏分区：播放页 fail-closed 不注入 + 服务器 403 拒提交；清单见 `src/core/sensitiveZones.ts` 与 server `SENSITIVE_TIDS`，两边同步改）、申诉说明（mailto）+ aicu.cc 查成分深链、服务器冒烟测试 14 用例（`cd server && npm test`）。提交协议含 `region`/`regionV2`/`upMid`/`upName` 元数据（UP警示派生与二期分社区对比的数据基础）。对外名称**「小电视避雷针」**（manifest/商店/文案用，与 SB 的「小电视空降助手」同理避商标），BiliMark 保留为内部代号。**未部署**（用户暂缓花钱，DEPLOY.md 就绪待执行）、未上架商店。唯一用户 = 项目作者本人。代码已入 git（main 分支），远程 GitHub 仓库待用户建（建议先私有）。
 
 ## 必读文档（按此顺序）
 
@@ -34,6 +34,8 @@ src/                    扩展（TypeScript + webpack，MV3）
 server/                 零依赖微服务（node:http + Node24 内置 node:sqlite，单文件 src/index.ts）
                         端点：GET /api/markings、POST /api/markings、POST /api/vote、GET /database.json、GET /api/health
                         状态机阈值写死为常量（确认≥3/驳回≤-2），属调优待定项
+                        提交协议含 region/region_v2/up_mid/up_name；SENSITIVE_TIDS 高敏分区 403 拒提交
+                        BILIMARK_DATA_DIR 环境变量（测试隔离）；冒烟测试 npm test（node:test，自起独立服务器+数据目录）
 ```
 
 **数据链**：`LocalMarkProvider(ApiProvider(mockProvider))` —— 服务器优先，不可达回退 Mock；本地提交以「待确认」对本人可见（与服务器数据按分类去重，不重复叠加）。

@@ -99,6 +99,27 @@
   font-size: 11px;
   margin-top: 6px;
 }
+/* UP 查成分外链（纯深链，CONTEXT.md「查成分外链」）与 UP 主申诉说明（CONTEXT.md「申诉」） */
+.bmk-details__up {
+  margin-top: 6px;
+  font-size: 12px;
+}
+.bmk-details__up a {
+  color: #6ca4e8;
+  text-decoration: none;
+}
+.bmk-details__up a:hover {
+  text-decoration: underline;
+}
+.bmk-details__appeal {
+  margin-top: 6px;
+  color: #777777;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.bmk-details__appeal a {
+  color: #9a9a9a;
+}
 .bmk-details__demo-note {
   color: #fb7299;
   font-size: 12px;

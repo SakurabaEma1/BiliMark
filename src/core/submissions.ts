@@ -10,6 +10,11 @@ export interface StoredSubmission {
   synced?: boolean;
   /** 自声明的 B 站等级豁免（Lv6+，GOVERNANCE.md「等级豁免」） */
   claimedLv6?: boolean;
+  /** 提交时快照的分区/UP 元数据：待同步重发时页面可能已切换，必须用存储值而非现读 */
+  region?: number | null;
+  regionV2?: number | null;
+  upMid?: number | null;
+  upName?: string;
 }
 
 const KEY = 'bmk_submissions';

@@ -11,6 +11,8 @@ export interface BannerOptions {
   demo?: boolean;
   /** 投票需要：当前视频 BVID；提供时理由面板显示 👍/👎 */
   bvid?: string;
+  /** UP 主信息（查成分外链用；来自播放页 __INITIAL_STATE__） */
+  up?: { mid: number; name: string };
   /** 投票回调：POST 到服务器后由调用方刷新数据 */
   onVote?: (category: MarkingEntry['category'], vote: 1 | -1) => void;
 }
@@ -186,9 +188,38 @@ function buildDetails(
     box.append(note);
   }
 
+  // 查成分外联（CONTEXT.md「查成分外链」：纯深链跳转，不抓取不缓存第三方数据）
+  if (!demo && opts.up && opts.up.mid) {
+    const upRow = document.createElement('div');
+    upRow.className = 'bmk-details__up';
+    const a = document.createElement('a');
+    a.href = `https://aicu.cc/user/${opts.up.mid}`;
+    a.target = '_blank';
+    a.rel = 'noreferrer noopener';
+    a.textContent = `查UP主「${opts.up.name || opts.up.mid}」成分 ↗`;
+    upRow.append(a);
+    box.append(upRow);
+  }
+
   const disclaimer = document.createElement('div');
   disclaimer.className = 'bmk-details__disclaimer';
   disclaimer.textContent = STR.disclaimer;
   box.append(disclaimer);
+
+  // 申诉（CONTEXT.md「申诉」：争议解决机制 + 法律防御；渠道常量留空则只显示文案）
+  if (!demo) {
+    const appeal = document.createElement('div');
+    appeal.className = 'bmk-details__appeal';
+    appeal.append(STR.appealNote);
+    if (STR.appealUrl) {
+      const a = document.createElement('a');
+      a.href = STR.appealUrl;
+      a.textContent = STR.appealLinkText;
+      appeal.append(a, '。');
+    } else {
+      appeal.append('。');
+    }
+    box.append(appeal);
+  }
   return box;
 }

@@ -1,5 +1,7 @@
 import { parseBvidFromUrl } from './bilibili/urls';
 import { waitFor, waitForPredicate } from './bilibili/wait';
+import { readVideoMeta } from './bilibili/videoMeta';
+import { isSensitiveZone } from '../core/sensitiveZones';
 import { createBanner, type BannerHandle } from './banner';
 import { mountEntryPill } from './entry';
 import { postVote } from '../core/api';
@@ -32,6 +34,19 @@ export class VideoPageController {
   private async enter(url: string): Promise<void> {
     const bvid = parseBvidFromUrl(url);
     if (!bvid) return;
+
+    // 分区隔离墙（ADR-0004，fail-closed）：分区不可判定或命中高敏清单时，播放页不注入任何 UI。
+    // 合规优先于可用性——宁可漏提醒，不可在高敏分区出现「社区标记」。
+    const meta = readVideoMeta();
+    if (!meta || (meta.tid === null && meta.tidV2 === null)) {
+      console.warn('[BiliMark] 无法判定视频分区，按隔离墙策略跳过注入（fail-closed）');
+      return;
+    }
+    if (isSensitiveZone(meta.tid, meta.tidV2)) {
+      console.info(`[BiliMark] 高敏分区（${meta.tname || '未知'}），不启用标记与提醒（分区隔离墙）`);
+      return;
+    }
+
     const myToken = ++this.token;
 
     this.banner?.destroy();
@@ -63,6 +78,7 @@ export class VideoPageController {
     if (!vm) return;
     this.banner = createBanner(vm.entries, anchor as HTMLElement, {
       bvid,
+      up: meta.upMid !== null ? { mid: meta.upMid, name: meta.upName } : undefined,
       onVote: (category, v) => {
         void this.vote(bvid, category, v);
       },
