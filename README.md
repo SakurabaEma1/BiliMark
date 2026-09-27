@@ -58,7 +58,7 @@ cd server && npm install && npm run dev
 cd server && npm test
 ```
 
-设计与决策文档：[CONTEXT.md](CONTEXT.md)（领域术语表）、[docs/adr/](docs/adr/)（架构决策，含被否决方案）、[docs/GOVERNANCE.md](docs/GOVERNANCE.md)（治理规则）、[docs/FEASIBILITY.md](docs/FEASIBILITY.md)（可行性分析）。
+设计与决策文档为项目内部文档，不随仓库分发。
 
 ## 许可
 

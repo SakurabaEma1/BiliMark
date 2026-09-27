@@ -7,6 +7,9 @@ server/data/
 tmp_probe/
 .tmp_video.html
 AGENTS.md
+CONTEXT.md
+DEPLOY.md
+docs/
 Thumbs.db
 Desktop.ini
 .DS_Store
