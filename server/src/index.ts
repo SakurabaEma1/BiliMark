@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const here = dirname(fileURLToPath(import.meta.url));
-const dataDir = join(here, '..', 'data');
+const dataDir = process.env.BILIMARK_DATA_DIR ?? join(here, '..', 'data');
 mkdirSync(dataDir, { recursive: true });
 
 const db = new DatabaseSync(join(dataDir, 'bilimark.db'));
@@ -46,11 +46,19 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
 `);
-// 旧库迁移：v0.3 前的 submissions 表补 claimed_lv6 列（已存在则忽略）
-try {
-  db.exec('ALTER TABLE submissions ADD COLUMN claimed_lv6 INTEGER NOT NULL DEFAULT 0');
-} catch {
-  // 列已存在
+// 旧库迁移：v0.3 前的 submissions 表补列（已存在则忽略）
+for (const ddl of [
+  'ALTER TABLE submissions ADD COLUMN claimed_lv6 INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE submissions ADD COLUMN region INTEGER', // 视频分区（v1 体系 tid），二期分社区对比的数据基础
+  'ALTER TABLE submissions ADD COLUMN region_v2 INTEGER', // 视频分区（v2 新体系 tid_v2）
+  'ALTER TABLE submissions ADD COLUMN up_mid INTEGER', // UP 主 mid（元数据，派生 UP警示用）
+  'ALTER TABLE submissions ADD COLUMN up_name TEXT',
+]) {
+  try {
+    db.exec(ddl);
+  } catch {
+    // 列已存在
+  }
 }
 
 /** 调优待定项（FEASIBILITY.md 实现期待定项）：先写死，跑起来有数据再调 */
@@ -61,6 +69,18 @@ const NOVICE_MULTIPLIER = 2; // 新手期确认阈值倍数（全新手标记需
 const ADMIN_KEY = process.env.ADMIN_KEY ?? ''; // 未设置则管理端点不可达（404，不暴露存在）
 const CATEGORIES = new Set(['ai_low_effort', 'clickbait', 'misinformation']);
 const BVID_RE = /^BV[0-9A-Za-z]{10}$/;
+
+/**
+ * 高敏分区（ADR-0004 分区隔离墙）：不接受提交、不展示提醒。
+ * v1 从紧：资讯区 = 时政/社会/国际新闻，「造谣」标记在此等于替用户做政治定论。
+ * tid 体系依据 bilibili-API-collect video_zone.md / video_zone_v2.md（2026-09 查证）；
+ * 124 社科·法律·心理、207/2087 财经商业属知识区，风险较低，v1 保持开放，清单可调。
+ */
+const SENSITIVE_TIDS = new Set<number>([
+  202, 203, 204, 205, 206, // v1 资讯区：主分区/热点(时政)/环球/社会/综合
+  1009, 2080, 2081, 2082, 2083, // v2 资讯区：主分区/时政资讯/海外资讯/社会资讯/综合资讯
+  2088, 2089, // v2 知识区：社会观察/时政解读
+]);
 
 interface SubRow {
   id: number;
@@ -279,6 +299,10 @@ const server = createServer((req, res) => {
           evidence?: string[];
           privateId?: string;
           claimedLv6?: boolean;
+          region?: number | null;
+          regionV2?: number | null;
+          upMid?: number | null;
+          upName?: string;
         };
         const bvid = body.bvid ?? '';
         const category = body.category ?? '';
@@ -287,9 +311,25 @@ const server = createServer((req, res) => {
           ? body.evidence.filter((u) => /^https?:\/\//i.test(u)).slice(0, 5)
           : [];
         const privateId = body.privateId ?? '';
+        const region = Number.isInteger(body.region) ? (body.region as number) : null;
+        const regionV2 = Number.isInteger(body.regionV2) ? (body.regionV2 as number) : null;
+        const upMid = Number.isInteger(body.upMid) ? (body.upMid as number) : null;
+        const upName = typeof body.upName === 'string' ? body.upName.trim().slice(0, 64) : '';
 
         if (!BVID_RE.test(bvid) || !CATEGORIES.has(category)) {
           sendJson(res, 400, { error: 'invalid bvid or category' });
+          return;
+        }
+        if (region !== null && (region < 0 || region > 10000)) {
+          sendJson(res, 400, { error: 'invalid region' });
+          return;
+        }
+        // 分区隔离墙（ADR-0004）：v1/v2 任一分区命中高敏清单即拒绝，双体系都查防止绕过
+        if (
+          (region !== null && SENSITIVE_TIDS.has(region)) ||
+          (regionV2 !== null && SENSITIVE_TIDS.has(regionV2))
+        ) {
+          sendJson(res, 403, { error: 'sensitive zone not allowed' });
           return;
         }
         if (reason.length < 5 || reason.length > 500) {
@@ -307,8 +347,8 @@ const server = createServer((req, res) => {
 
         try {
           db.prepare(
-            `INSERT INTO submissions (bvid, category, reason, evidence, public_id, claimed_lv6, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO submissions (bvid, category, reason, evidence, public_id, claimed_lv6, region, region_v2, up_mid, up_name, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           ).run(
             bvid,
             category,
@@ -316,6 +356,10 @@ const server = createServer((req, res) => {
             JSON.stringify(evidence),
             sha256(privateId),
             body.claimedLv6 === true ? 1 : 0,
+            region,
+            regionV2,
+            upMid,
+            upName || null,
             Date.now(),
           );
         } catch {
@@ -368,7 +412,8 @@ const server = createServer((req, res) => {
     if (req.method === 'GET' && url.pathname === '/database.json') {
       const subs = db
         .prepare(
-          `SELECT bvid, category, reason, evidence, claimed_lv6, created_at FROM submissions`,
+          `SELECT bvid, category, reason, evidence, claimed_lv6, region, region_v2, up_mid, up_name, created_at
+           FROM submissions`,
         )
         .all() as unknown as Array<{
         bvid: string;
@@ -376,6 +421,10 @@ const server = createServer((req, res) => {
         reason: string;
         evidence: string;
         claimed_lv6: number;
+        region: number | null;
+        region_v2: number | null;
+        up_mid: number | null;
+        up_name: string | null;
         created_at: number;
       }>;
       const votes = db
