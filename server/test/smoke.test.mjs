@@ -63,7 +63,7 @@ const submitSimple = (bvid, privateId, extra = {}) =>
 before(async () => {
   dataDir = mkdtempSync(join(tmpdir(), 'bilimark-test-'));
   child = spawn(process.execPath, [join(here, '..', 'dist', 'index.js')], {
-    env: { ...process.env, PORT: String(PORT), ADMIN_KEY, BILIMARK_DATA_DIR: dataDir },
+    env: { ...process.env, PORT: String(PORT), ADMIN_KEY, BILIMARK_DATA_DIR: dataDir, RATE_LIMIT_MAX: '100000' },
     stdio: 'ignore',
   });
   for (let i = 0; i < 60; i++) {
@@ -356,6 +356,57 @@ test('隐私查询：hashes= 前缀命中 bvids= 同款数据；duration 入库'
   assert.match(pub.headers.get('cache-control') ?? '', /s-maxage=60/);
   const priv = await fetch(`${BASE}/api/markings?bvids=${bvid}&as=${sha256(pid)}`);
   assert.match(priv.headers.get('cache-control') ?? '', /private/);
+});
+
+test('v0.4 分类扩展：盗视频必填原链接/3票确认；黑流量观点类5票；新手期叠加', async () => {
+  const { createHash: ch2 } = await import('node:crypto');
+  // 1) stolen 无原链接 → 400；有 → 3 票确认（事实类标准阈值；提交者先毕业 3 条避开新手期）
+  const graduate = async (pid) => {
+    for (let i = 0; i < 3; i++) {
+      await post('/api/markings', { bvid: newBvid(), category: CAT, reason: '毕业用提交', evidence: [], privateId: pid });
+    }
+  };
+  const sv = newBvid();
+  const noLink = await post('/api/markings', { bvid: sv, category: 'stolen', reason: '测试理由：搬运未注明出处', evidence: [], privateId: newId() });
+  assert.equal(noLink.status, 400, '盗视频缺原视频链接应 400');
+  const pidS = newId();
+  await graduate(pidS);
+  assert.equal((await post('/api/markings', { bvid: sv, category: 'stolen', reason: '测试理由：搬运未注明出处', evidence: ['https://www.youtube.com/watch?v=test'], privateId: pidS })).status, 200);
+  assert.equal((await vote(sv, 'stolen', 1, newId())).status, 200);
+  await vote(sv, 'stolen', 1, newId());
+  const svEntry = (await get(`/api/markings?bvids=${sv}`)).body.markings[sv].find((e) => e.category === 'stolen');
+  assert.equal(svEntry.status, 'confirmed', '盗视频 3 票应确认（事实类）');
+
+  // 2) engagement_bait：4 票 pending，第 5 票 confirmed（观点类更高门槛；提交者先毕业）
+  const eb = newBvid();
+  const pidE = newId();
+  await graduate(pidE);
+  assert.equal((await post('/api/markings', { bvid: eb, category: 'engagement_bait', reason: '测试理由：刻意引战骗互动', evidence: [], privateId: pidE })).status, 200);
+  for (let i = 0; i < 3; i++) await vote(eb, 'engagement_bait', 1, newId());
+  let ebEntry = (await get(`/api/markings?bvids=${eb}`)).body.markings[eb].find((e) => e.category === 'engagement_bait');
+  assert.equal(ebEntry.status, 'pending', '黑流量 net=4 < 5 应待确认');
+  await vote(eb, 'engagement_bait', 1, newId());
+  ebEntry = (await get(`/api/markings?bvids=${eb}`)).body.markings[eb].find((e) => e.category === 'engagement_bait');
+  assert.equal(ebEntry.status, 'confirmed', '黑流量 net=5 应确认（观点类门槛）');
+
+  // 3) 观点类新手期叠加：黑流量新手标记需 10 票（5×2）
+  const ebNovice = newBvid();
+  const pidN = newId();
+  await post('/api/markings', { bvid: ebNovice, category: 'engagement_bait', reason: '测试理由：黑流量新手期验证', evidence: [], privateId: pidN });
+  for (let i = 0; i < 8; i++) await vote(ebNovice, 'engagement_bait', 1, newId());
+  ebEntry = (await get(`/api/markings?bvids=${ebNovice}`)).body.markings[ebNovice].find((e) => e.category === 'engagement_bait');
+  assert.equal(ebEntry.status, 'pending', '黑流量新手 net=9 < 10 应待确认');
+  await vote(ebNovice, 'engagement_bait', 1, newId());
+  ebEntry = (await get(`/api/markings?bvids=${ebNovice}`)).body.markings[ebNovice].find((e) => e.category === 'engagement_bait');
+  assert.equal(ebEntry.status, 'confirmed', '黑流量新手 net=10 应确认');
+
+  // 4) aiDeclared 元数据：任一提交者带声明即真
+  const av = newBvid();
+  await post('/api/markings', { bvid: av, category: CAT, reason: '测试理由：AI声明元数据验证', evidence: [], privateId: newId(), aiDeclared: false });
+  await post('/api/markings', { bvid: av, category: 'clickbait', reason: '测试理由：AI声明元数据验证二', evidence: [], privateId: newId(), aiDeclared: true });
+  const avMark = (await get(`/api/markings?bvids=${av}`)).body.markings[av];
+  assert.equal(avMark.find((e) => e.category === CAT).aiDeclared, false, '未声明条目为 false');
+  assert.equal(avMark.find((e) => e.category === 'clickbait').aiDeclared, true, '声明条目为 true');
 });
 
 test('GET /api/markings：bvid 校验与批量上限不 500', async () => {

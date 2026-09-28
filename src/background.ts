@@ -20,6 +20,7 @@ async function syncPending(): Promise<void> {
       upMid: s.upMid ?? null,
       upName: s.upName ?? '',
       duration: s.duration ?? null,
+      aiDeclared: s.aiDeclared === true,
     });
     if (ok || status === 409) await markSynced(s.bvid, s.category, s.createdAt);
   }

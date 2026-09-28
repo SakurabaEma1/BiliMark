@@ -23,6 +23,7 @@ interface D1Like {
 interface Env {
   DB: D1Like;
   ADMIN_KEY?: string;
+  RATE_LIMIT_MAX?: string;
 }
 
 const CONFIRM_THRESHOLD = 3;
@@ -30,7 +31,18 @@ const HIDE_THRESHOLD = -2;
 const NOVICE_SUBMISSIONS = 3;
 const NOVICE_MULTIPLIER = 2;
 const UP_WARNING_THRESHOLD = 3;
-const CATEGORIES = new Set(['ai_low_effort', 'clickbait', 'misinformation']);
+const OPINION_CONFIRM_THRESHOLD = 5; // 观点类分类（黑流量）确认门槛，与 src/index.ts 同步
+const CATEGORIES = new Set([
+  'ai_low_effort',
+  'clickbait',
+  'misinformation',
+  'stolen',
+  'engagement_bait',
+]);
+/** 分类确认阈值：观点类 5 票，事实类 3 票 */
+function thresholdFor(category: string): number {
+  return category === 'engagement_bait' ? OPINION_CONFIRM_THRESHOLD : CONFIRM_THRESHOLD;
+}
 const BVID_RE = /^BV[0-9A-Za-z]{10}$/;
 
 async function sha256(input: string): Promise<string> {
@@ -38,9 +50,9 @@ async function sha256(input: string): Promise<string> {
   return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-// ---------- best-effort 限流：每 IP 每分钟 120 次（isolate 局部） ----------
+// ---------- best-effort 限流：每 IP 每分钟 120 次（isolate 局部；RATE_LIMIT_MAX 可调） ----------
 const hits = new Map<string, { n: number; t: number }>();
-function rateLimited(ip: string): boolean {
+function rateLimited(ip: string, max: number): boolean {
   const now = Date.now();
   const rec = hits.get(ip) ?? { n: 0, t: now };
   if (now - rec.t > 60_000) {
@@ -50,7 +62,7 @@ function rateLimited(ip: string): boolean {
   rec.n += 1;
   hits.set(ip, rec);
   if (hits.size > 10_000) hits.clear();
-  return rec.n > 120;
+  return rec.n > max;
 }
 
 // ---------- 聚合：标记状态机 + UP主警示（与 src/index.ts aggregate 对齐） ----------
@@ -67,7 +79,7 @@ async function aggregate(
   const subs = (
     await db
       .prepare(
-        `SELECT id, bvid, category, reason, evidence, public_id, claimed_lv6, up_mid, up_name, created_at
+        `SELECT id, bvid, category, reason, evidence, public_id, claimed_lv6, up_mid, up_name, ai_declared, created_at
          FROM submissions WHERE bvid IN (${placeholders}) ORDER BY created_at ASC`,
       )
       .bind(...bvids)
@@ -82,6 +94,7 @@ async function aggregate(
     claimed_lv6: number;
     up_mid: number | null;
     up_name: string | null;
+    ai_declared: number;
     created_at: number;
   }>;
   const votes = (
@@ -120,12 +133,13 @@ async function aggregate(
     }
   }
 
-  const byKey = new Map<string, { net: number; against: number; reasons: Array<{ reason: string; at: number }>; evidence: Set<string>; allNovice: boolean }>();
+  const byKey = new Map<string, { net: number; against: number; reasons: Array<{ reason: string; at: number }>; evidence: Set<string>; allNovice: boolean; aiDeclared: boolean }>();
   for (const s of visSubs) {
     const key = `${s.bvid}|${s.category}`;
-    const agg = byKey.get(key) ?? { net: 0, against: 0, reasons: [], evidence: new Set<string>(), allNovice: true };
+    const agg = byKey.get(key) ?? { net: 0, against: 0, reasons: [], evidence: new Set<string>(), allNovice: true, aiDeclared: false };
     agg.net += 1;
     if (!noviceSet.has(s.id)) agg.allNovice = false;
+    if (s.ai_declared === 1) agg.aiDeclared = true;
     agg.reasons.push({ reason: s.reason, at: s.created_at });
     try {
       for (const e of JSON.parse(s.evidence) as string[]) agg.evidence.add(e);
@@ -152,7 +166,7 @@ async function aggregate(
   for (const [key, agg] of byKey) {
     if (agg.net <= HIDE_THRESHOLD) continue;
     const [bvid, category] = key.split('|');
-    const threshold = agg.allNovice ? CONFIRM_THRESHOLD * NOVICE_MULTIPLIER : CONFIRM_THRESHOLD;
+    const threshold = thresholdFor(category) * (agg.allNovice ? NOVICE_MULTIPLIER : 1);
     const confirmed = agg.net >= threshold;
     const up = upOf.get(key);
     if (confirmed && up) {
@@ -169,6 +183,7 @@ async function aggregate(
       evidence: [...agg.evidence].slice(0, 3),
       upMid: up?.upMid,
       upName: up?.upName,
+      aiDeclared: agg.aiDeclared,
     });
   }
 
@@ -240,7 +255,7 @@ export default {
           'Access-Control-Allow-Headers': 'Content-Type',
         } });
       }
-      if (rateLimited(ip)) return json({ error: 'rate limited' }, 429);
+      if (rateLimited(ip, Number(env.RATE_LIMIT_MAX ?? 120))) return json({ error: 'rate limited' }, 429);
 
       // GET /api/health
       if (req.method === 'GET' && url.pathname === '/api/health') {
@@ -305,6 +320,7 @@ export default {
             upMid?: number | null;
             upName?: string;
             duration?: number | null;
+            aiDeclared?: boolean;
           };
           const bvid = body.bvid ?? '';
           const category = body.category ?? '';
@@ -329,12 +345,14 @@ export default {
           }
           if (reason.length < 5 || reason.length > 500) return json({ error: 'reason must be 5-500 chars' }, 400);
           if (category === 'misinformation' && evidence.length === 0) return json({ error: 'misinformation requires evidence' }, 400);
+          // 盗视频：原视频链接必填（不限平台）
+          if (category === 'stolen' && evidence.length === 0) return json({ error: 'stolen requires source video link' }, 400);
           if (privateId.length < 32) return json({ error: 'invalid privateId' }, 400);
 
           try {
             await env.DB.prepare(
-              `INSERT INTO submissions (bvid, category, reason, evidence, public_id, claimed_lv6, region, region_v2, up_mid, up_name, bvid_hash, duration, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              `INSERT INTO submissions (bvid, category, reason, evidence, public_id, claimed_lv6, region, region_v2, up_mid, up_name, bvid_hash, duration, ai_declared, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             )
               .bind(
                 bvid,
@@ -349,6 +367,7 @@ export default {
                 upName || null,
                 await sha256(bvid),
                 duration,
+                body.aiDeclared === true ? 1 : 0,
                 Date.now(),
               )
               .run();

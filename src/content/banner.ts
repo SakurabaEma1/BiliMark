@@ -182,7 +182,7 @@ function buildDetails(entries: MarkingEntry[], opts: BannerOptions = {}): HTMLEl
       if (e.evidence.length > 0) {
       const ev = document.createElement('div');
       ev.className = 'bmk-details__evidence';
-      ev.append(STR.evidenceLabel);
+      ev.append(e.category === 'stolen' ? '原视频：' : STR.evidenceLabel);
       e.evidence.forEach((href, i) => {
         const a = document.createElement('a');
         a.href = href;

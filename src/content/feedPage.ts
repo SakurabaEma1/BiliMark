@@ -114,7 +114,16 @@ export function paintBadge(card: HTMLElement, vm: VideoMarkings): void {
   label.className = 'bmk-chip__label';
   label.textContent = `⚠ ${categoryLabel(entries[0].category)} · ${entries[0].confirmCount}`;
 
-  chip.append(label, buildTip(entries, vm.upWarning));
+  chip.append(label);
+  // 官方 AI 生成声明（中性标注）：小灰标，不代表低质判定（低质判定走 AI低创分类）
+  if (vm.aiDeclared) {
+    const ai = document.createElement('span');
+    ai.className = 'bmk-chip__ai';
+    ai.textContent = 'AI';
+    ai.title = '官方标注：本视频含 AI 生成内容（不代表低质判定）';
+    chip.append(ai);
+  }
+  chip.append(buildTip(entries, vm.upWarning));
   card.appendChild(chip);
 }
 

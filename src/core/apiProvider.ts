@@ -58,9 +58,16 @@ export class ApiProvider implements MarkProvider {
       };
       const map = new Map<string, VideoMarkings>();
       for (const [prefix, bvid] of prefixToBvid) {
-        const entries = data.markings?.[bvid];
-        if (!entries || entries.length === 0) continue;
+        const raw = data.markings?.[bvid];
+        if (!raw || raw.length === 0) continue;
+        // 排序：已确认优先、确认数降序——角标/悬浮详情取第一条时信息价值最大
+        const entries = [...raw].sort((a, b) => {
+          if (a.status !== b.status) return a.status === 'confirmed' ? -1 : 1;
+          return b.confirmCount - a.confirmCount;
+        });
         const vm: VideoMarkings = { bvid, entries };
+        // 官方 AI 生成声明（中性元数据）：任一条目检测到即真
+        vm.aiDeclared = entries.some((e) => e.aiDeclared === true);
         // UP主警示派生（CONTEXT.md）：该视频 UP 触发门槛时挂到视频级标记上
         const upMid = entries.find((e) => typeof e.upMid === 'number')?.upMid;
         const warn = upMid !== undefined ? data.upWarnings?.[String(upMid)] : undefined;

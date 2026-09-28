@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS submissions (
   up_name TEXT,
   bvid_hash TEXT,
   duration INTEGER,
+  ai_declared INTEGER,
   created_at INTEGER NOT NULL,
   UNIQUE(bvid, category, public_id)
 );

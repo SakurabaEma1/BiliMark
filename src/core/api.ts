@@ -39,6 +39,8 @@ export interface MarkingPayload {
   upName?: string;
   /** 视频时长（秒）：防换源校验的数据基础 */
   duration?: number | null;
+  /** 播放页检测到的官方 AI 生成声明（中性元数据，非低质判定） */
+  aiDeclared?: boolean;
 }
 
 export interface VotePayload {

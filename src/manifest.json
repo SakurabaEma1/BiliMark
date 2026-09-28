@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "小电视避雷针（开发版）",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "社区众包标记低质量视频（AI低创/标题党/造谣），观看前非阻断提醒，减少时间浪费。",
   "permissions": ["storage", "alarms"],
   "content_scripts": [

@@ -53,3 +53,21 @@ export async function readVideoMeta(bvid: string): Promise<VideoMeta | null> {
     return null;
   }
 }
+
+/**
+ * 播放页官方 AI 生成声明检测。
+ * B 站公开接口不返回该字段（view/popular 均无，2026-09 实测），但视频页信息区
+ * 会渲染声明文字——DOM 在隔离世界与页面间共享，可安全读取。
+ * 限定在视频信息容器内匹配，避免把评论区/简介外的"AI"字样误判为声明；
+ * UP 在简介自述使用 AI 也会命中，符合"视频内使用了 AI"的中性语义。
+ */
+export function readAiDeclaredFromDom(): boolean {
+  try {
+    const scope = document.querySelector('#viewbox_report, .video-info-container');
+    if (!scope) return false;
+    const text = (scope.textContent ?? '').slice(0, 2000);
+    return /AI\s*生成|生成式\s*AI|人工智能生成/.test(text);
+  } catch {
+    return false;
+  }
+}

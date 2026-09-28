@@ -55,6 +55,7 @@ for (const ddl of [
   'ALTER TABLE submissions ADD COLUMN up_name TEXT',
   'ALTER TABLE submissions ADD COLUMN bvid_hash TEXT', // sha256(bvid) 全长 hex：哈希前缀隐私查询（SB 同款协议）
   'ALTER TABLE submissions ADD COLUMN duration INTEGER', // 提交时视频时长（秒）：防换源校验的数据基础
+  'ALTER TABLE submissions ADD COLUMN ai_declared INTEGER', // 提交时检测到的官方 AI 生成声明（中性元数据）
 ]) {
   try {
     db.exec(ddl);
@@ -79,8 +80,19 @@ const HIDE_THRESHOLD = -2; // 净票 ≤ -2 → 驳回（隐藏）
 const NOVICE_SUBMISSIONS = 3; // 新手期：公开 ID 的前 3 条提交（GOVERNANCE.md）
 const NOVICE_MULTIPLIER = 2; // 新手期确认阈值倍数（全新手标记需 6 票）
 const UP_WARNING_THRESHOLD = 3; // UP主警示：同 UP 同分类「已确认」视频数门槛（CONTEXT.md，调优待定项）
+const OPINION_CONFIRM_THRESHOLD = 5; // 观点类分类（黑流量）确认门槛：判定主观性强，更高门槛对冲串子与误伤
 const ADMIN_KEY = process.env.ADMIN_KEY ?? ''; // 未设置则管理端点不可达（404，不暴露存在）
-const CATEGORIES = new Set(['ai_low_effort', 'clickbait', 'misinformation']);
+const CATEGORIES = new Set([
+  'ai_low_effort',
+  'clickbait',
+  'misinformation',
+  'stolen', // 盗视频：原视频链接必填（不限平台，抖音/YouTube 等）
+  'engagement_bait', // 黑流量：引战/骗互动（观点类，更高门槛）
+]);
+/** 分类确认阈值：观点类 5 票，事实类 3 票（v0.4 分类扩展） */
+function thresholdFor(category: string): number {
+  return category === 'engagement_bait' ? OPINION_CONFIRM_THRESHOLD : CONFIRM_THRESHOLD;
+}
 const BVID_RE = /^BV[0-9A-Za-z]{10}$/;
 
 /**
@@ -105,6 +117,7 @@ interface SubRow {
   claimed_lv6: number;
   up_mid: number | null;
   up_name: string | null;
+  ai_declared: number;
   created_at: number;
 }
 interface VoteRow {
@@ -118,7 +131,8 @@ function sha256(input: string): string {
   return createHash('sha256').update(input).digest('hex');
 }
 
-// ---------- 简易限流：每 IP 每分钟 120 次 ----------
+// ---------- 简易限流：每 IP 每分钟 120 次（RATE_LIMIT_MAX 可调，测试环境调高） ----------
+const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX ?? 120);
 const hits = new Map<string, { n: number; t: number }>();
 function rateLimited(ip: string): boolean {
   const now = Date.now();
@@ -130,7 +144,7 @@ function rateLimited(ip: string): boolean {
   rec.n += 1;
   hits.set(ip, rec);
   if (hits.size > 10_000) hits.clear(); // 防-map膨胀，粗粒度即可
-  return rec.n > 120;
+  return rec.n > RATE_LIMIT_MAX;
 }
 
 // ---------- 聚合：标记状态机（CONTEXT.md「标记状态机」）----------
@@ -152,7 +166,7 @@ function aggregate(
   const placeholders = bvids.map(() => '?').join(',');
   const subs = db
     .prepare(
-      `SELECT id, bvid, category, reason, evidence, public_id, claimed_lv6, up_mid, up_name, created_at
+      `SELECT id, bvid, category, reason, evidence, public_id, claimed_lv6, up_mid, up_name, ai_declared, created_at
        FROM submissions WHERE bvid IN (${placeholders}) ORDER BY created_at ASC`,
     )
     .all(...bvids) as unknown as SubRow[];
@@ -194,7 +208,7 @@ function aggregate(
     }
   }
 
-  const byKey = new Map<string, Agg & { allNovice: boolean }>();
+  const byKey = new Map<string, Agg & { allNovice: boolean; aiDeclared: boolean }>();
   for (const s of visSubs) {
     const key = `${s.bvid}|${s.category}`;
     const agg =
@@ -204,9 +218,11 @@ function aggregate(
         reasons: [],
         evidence: new Set<string>(),
         allNovice: true,
+        aiDeclared: false,
       };
     agg.net += 1; // 提交者本人算一票赞成
     if (!noviceSet.has(s.id)) agg.allNovice = false;
+    if (s.ai_declared === 1) agg.aiDeclared = true; // 任一提交者检测到官方声明即为真（中性元数据）
     agg.reasons.push({ reason: s.reason, at: s.created_at });
     try {
       for (const e of JSON.parse(s.evidence) as string[]) agg.evidence.add(e);
@@ -235,8 +251,8 @@ function aggregate(
   for (const [key, agg] of byKey) {
     if (agg.net <= HIDE_THRESHOLD) continue; // 驳回：对全网隐藏
     const [bvid, category] = key.split('|');
-    // 新手期乘法器：全部贡献者都在新手期 → 阈值翻倍（GOVERNANCE.md）
-    const threshold = agg.allNovice ? CONFIRM_THRESHOLD * NOVICE_MULTIPLIER : CONFIRM_THRESHOLD;
+    // 新手期乘法器叠加在分类阈值上（观点类新手 = 10 票）；观点类门槛见 thresholdFor
+    const threshold = thresholdFor(category) * (agg.allNovice ? NOVICE_MULTIPLIER : 1);
     const confirmed = agg.net >= threshold;
     const up = upOf.get(key);
     if (confirmed && up) {
@@ -253,6 +269,7 @@ function aggregate(
       evidence: [...agg.evidence].slice(0, 3),
       upMid: up?.upMid,
       upName: up?.upName,
+      aiDeclared: agg.aiDeclared,
     });
   }
 
@@ -402,6 +419,7 @@ const server = createServer((req, res) => {
           upMid?: number | null;
           upName?: string;
           duration?: number | null;
+          aiDeclared?: boolean;
         };
         const bvid = body.bvid ?? '';
         const category = body.category ?? '';
@@ -444,6 +462,11 @@ const server = createServer((req, res) => {
           sendJson(res, 400, { error: 'misinformation requires evidence' });
           return;
         }
+        // 盗视频：原视频链接必填（对照依据；不限平台，http/https 链接即可）
+        if (category === 'stolen' && evidence.length === 0) {
+          sendJson(res, 400, { error: 'stolen requires source video link' });
+          return;
+        }
         if (privateId.length < 32) {
           sendJson(res, 400, { error: 'invalid privateId' });
           return;
@@ -451,8 +474,8 @@ const server = createServer((req, res) => {
 
         try {
           db.prepare(
-            `INSERT INTO submissions (bvid, category, reason, evidence, public_id, claimed_lv6, region, region_v2, up_mid, up_name, bvid_hash, duration, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO submissions (bvid, category, reason, evidence, public_id, claimed_lv6, region, region_v2, up_mid, up_name, bvid_hash, duration, ai_declared, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           ).run(
             bvid,
             category,
@@ -466,6 +489,7 @@ const server = createServer((req, res) => {
             upName || null,
             sha256(bvid),
             duration,
+            body.aiDeclared === true ? 1 : 0,
             Date.now(),
           );
         } catch {

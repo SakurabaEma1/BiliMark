@@ -17,6 +17,8 @@ export interface StoredSubmission {
   upName?: string;
   /** 提交时的视频时长（秒） */
   duration?: number | null;
+  /** 提交时检测到的官方 AI 生成声明 */
+  aiDeclared?: boolean;
 }
 
 const KEY = 'bmk_submissions';
