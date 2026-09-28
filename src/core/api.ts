@@ -37,6 +37,8 @@ export interface MarkingPayload {
   /** UP 主元数据（服务器留存，派生 UP警示用） */
   upMid?: number | null;
   upName?: string;
+  /** 视频时长（秒）：防换源校验的数据基础 */
+  duration?: number | null;
 }
 
 export interface VotePayload {

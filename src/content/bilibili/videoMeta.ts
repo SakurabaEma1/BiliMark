@@ -14,6 +14,8 @@ export interface VideoMeta {
   tname: string;
   upMid: number | null;
   upName: string;
+  /** 视频时长（秒）：随提交记录，为防换源校验留数据基础 */
+  duration: number | null;
 }
 
 const cache = new Map<string, VideoMeta>();
@@ -28,7 +30,13 @@ export async function readVideoMeta(bvid: string): Promise<VideoMeta | null> {
     );
     const body = (await res.json()) as {
       code?: number;
-      data?: { tid?: number; tname?: string; tid_v2?: number; owner?: { mid?: number; name?: string } };
+      data?: {
+        tid?: number;
+        tname?: string;
+        tid_v2?: number;
+        duration?: number;
+        owner?: { mid?: number; name?: string };
+      };
     };
     if (body.code !== 0 || !body.data) return null;
     const meta: VideoMeta = {
@@ -37,6 +45,7 @@ export async function readVideoMeta(bvid: string): Promise<VideoMeta | null> {
       tname: typeof body.data.tname === 'string' ? body.data.tname : '',
       upMid: typeof body.data.owner?.mid === 'number' ? body.data.owner.mid : null,
       upName: typeof body.data.owner?.name === 'string' ? body.data.owner.name : '',
+      duration: typeof body.data.duration === 'number' ? body.data.duration : null,
     };
     cache.set(bvid, meta);
     return meta;

@@ -53,12 +53,24 @@ for (const ddl of [
   'ALTER TABLE submissions ADD COLUMN region_v2 INTEGER', // 视频分区（v2 新体系 tid_v2）
   'ALTER TABLE submissions ADD COLUMN up_mid INTEGER', // UP 主 mid（元数据，派生 UP警示用）
   'ALTER TABLE submissions ADD COLUMN up_name TEXT',
+  'ALTER TABLE submissions ADD COLUMN bvid_hash TEXT', // sha256(bvid) 全长 hex：哈希前缀隐私查询（SB 同款协议）
+  'ALTER TABLE submissions ADD COLUMN duration INTEGER', // 提交时视频时长（秒）：防换源校验的数据基础
 ]) {
   try {
     db.exec(ddl);
   } catch {
     // 列已存在
   }
+}
+
+// 回填历史行的 bvid_hash（SQLite 无内置 sha256，启动时补算；量小逐行即可）
+{
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_submissions_bvid_hash ON submissions(bvid_hash)`);
+  const rows = db
+    .prepare(`SELECT id, bvid FROM submissions WHERE bvid_hash IS NULL`)
+    .all() as unknown as Array<{ id: number; bvid: string }>;
+  const update = db.prepare(`UPDATE submissions SET bvid_hash = ? WHERE id = ?`);
+  for (const r of rows) update.run(sha256(r.bvid), r.id);
 }
 
 /** 调优待定项（FEASIBILITY.md 实现期待定项）：先写死，跑起来有数据再调 */
@@ -339,20 +351,39 @@ const server = createServer((req, res) => {
       return;
     }
 
-    // GET /api/markings?bvids=BV1,BV2[&as=<本人 public_id 哈希>]
+    // GET /api/markings?bvids=BV1,BV2 或 ?hashes=<sha256前8位,…>[&as=<本人哈希>]
+    // hashes= 为隐私查询协议（SB 同款）：客户端不发明文 BVID，服务器按 bvid_hash 前缀匹配。
     if (req.method === 'GET' && url.pathname === '/api/markings') {
-      const bvids = (url.searchParams.get('bvids') ?? '')
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => BVID_RE.test(s))
-        .slice(0, 50);
       const asRaw = url.searchParams.get('as') ?? '';
       const as = /^[0-9a-f]{64}$/.test(asRaw) ? asRaw : null;
-      if (bvids.length === 0) {
+      // 隐私：带 as= 的响应是本人个性化视图，禁止共享缓存；公共查询可被边缘缓存短暂复用
+      res.setHeader('Cache-Control', as ? 'private, no-store' : 'public, max-age=0, s-maxage=60');
+
+      let queried: string[] = [];
+      const hashes = (url.searchParams.get('hashes') ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => /^[0-9a-f]{8}$/.test(s))
+        .slice(0, 50);
+      if (hashes.length > 0) {
+        const like = hashes.map(() => "bvid_hash LIKE ?").join(' OR ');
+        const rows = db
+          .prepare(`SELECT DISTINCT bvid FROM submissions WHERE ${like} LIMIT 500`)
+          .all(...hashes.map((h) => `${h}%`)) as unknown as Array<{ bvid: string }>;
+        queried = rows.map((r) => r.bvid);
+      } else {
+        queried = (url.searchParams.get('bvids') ?? '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter((s) => BVID_RE.test(s))
+          .slice(0, 50);
+      }
+
+      if (queried.length === 0) {
         sendJson(res, 200, { markings: {}, upWarnings: {} });
         return;
       }
-      sendJson(res, 200, aggregate(bvids, as));
+      sendJson(res, 200, aggregate(queried, as));
       return;
     }
 
@@ -370,6 +401,7 @@ const server = createServer((req, res) => {
           regionV2?: number | null;
           upMid?: number | null;
           upName?: string;
+          duration?: number | null;
         };
         const bvid = body.bvid ?? '';
         const category = body.category ?? '';
@@ -382,6 +414,11 @@ const server = createServer((req, res) => {
         const regionV2 = Number.isInteger(body.regionV2) ? (body.regionV2 as number) : null;
         const upMid = Number.isInteger(body.upMid) ? (body.upMid as number) : null;
         const upName = typeof body.upName === 'string' ? body.upName.trim().slice(0, 64) : '';
+        // 视频时长（秒）：防换源校验的数据基础（FEASIBILITY 待定项，SB videoDuration 同款思路）
+        const duration =
+          Number.isInteger(body.duration) && (body.duration as number) >= 0 && (body.duration as number) <= 100000
+            ? (body.duration as number)
+            : null;
 
         if (!BVID_RE.test(bvid) || !CATEGORIES.has(category)) {
           sendJson(res, 400, { error: 'invalid bvid or category' });
@@ -414,8 +451,8 @@ const server = createServer((req, res) => {
 
         try {
           db.prepare(
-            `INSERT INTO submissions (bvid, category, reason, evidence, public_id, claimed_lv6, region, region_v2, up_mid, up_name, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO submissions (bvid, category, reason, evidence, public_id, claimed_lv6, region, region_v2, up_mid, up_name, bvid_hash, duration, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           ).run(
             bvid,
             category,
@@ -427,6 +464,8 @@ const server = createServer((req, res) => {
             regionV2,
             upMid,
             upName || null,
+            sha256(bvid),
+            duration,
             Date.now(),
           );
         } catch {

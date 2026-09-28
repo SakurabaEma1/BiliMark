@@ -311,6 +311,7 @@ async function handleSubmit(
     regionV2: meta?.tidV2 ?? null,
     upMid: meta?.upMid ?? null,
     upName: meta?.upName ?? '',
+    duration: meta?.duration ?? null,
   });
   const synced = ok || status === 409; // 409 = 该标记已在社区，视为同步完成
   const submission: StoredSubmission = {
@@ -324,6 +325,7 @@ async function handleSubmit(
     regionV2: meta?.tidV2 ?? null,
     upMid: meta?.upMid ?? null,
     upName: meta?.upName ?? '',
+    duration: meta?.duration ?? null,
     synced, // 已同步的不进待同步队列，避免 background 一小时后无谓重发
   };
   await addSubmission(submission); // 本地自见记录；未同步时由 background 定时重试

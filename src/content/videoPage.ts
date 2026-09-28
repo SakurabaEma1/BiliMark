@@ -73,7 +73,8 @@ export class VideoPageController {
       this.entryStop = mountEntryPill(el, () => this.refresh());
     }
 
-    const result = await this.provider.getMarkings([bvid]);
+    // 播放页单视频查询走 fresh：投票/提交后的刷新必须即时反映，不读边缘缓存
+    const result = await this.provider.getMarkings([bvid], { fresh: true });
     if (myToken !== this.token) return;
 
     const vm = result.get(bvid);

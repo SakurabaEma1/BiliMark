@@ -321,6 +321,43 @@ test('UP主警示派生：门槛边界/分类隔离/撤回消失/影子封禁不
   await post('/api/admin/unshadowban', { publicId: sha256(seeder) }, { 'X-Admin-Key': ADMIN_KEY });
 });
 
+test('隐私查询：hashes= 前缀命中 bvids= 同款数据；duration 入库', async () => {
+  const bvid = newBvid();
+  const pid = newId();
+  const { createHash: ch } = await import('node:crypto');
+  const prefix = ch('sha256').update(bvid).digest('hex').slice(0, 8);
+  // 带 duration 提交
+  const s = await post('/api/markings', {
+    bvid,
+    category: CAT,
+    reason: '测试理由：哈希前缀查询与时长入库',
+    evidence: [],
+    privateId: pid,
+    duration: 213,
+  });
+  assert.equal(s.status, 200);
+
+  // hashes= 前缀查询（明文 bvid 不出现在请求里）
+  const byHash = await get(`/api/markings?hashes=${prefix}`);
+  assert.equal(byHash.status, 200);
+  assert.ok(byHash.body.markings[bvid], 'hash 前缀命中');
+  assert.equal(byHash.body.markings[bvid][0].confirmCount, 1);
+
+  // 8 位之外的 hash 不命中；无效格式被拒之门外（空结果）
+  const miss = await get(`/api/markings?hashes=${prefix.slice(0, 4)}`);
+  assert.deepEqual(miss.body.markings, {}, '前缀不足 8 位不匹配');
+
+  // 无效 hash 格式 → 空结果
+  const bad = await get('/api/markings?hashes=ZZZZ');
+  assert.deepEqual(bad.body.markings, {});
+
+  // 缓存头：无 as 公共查询可边缘缓存；带 as 私有不缓存
+  const pub = await fetch(`${BASE}/api/markings?bvids=${bvid}`);
+  assert.match(pub.headers.get('cache-control') ?? '', /s-maxage=60/);
+  const priv = await fetch(`${BASE}/api/markings?bvids=${bvid}&as=${sha256(pid)}`);
+  assert.match(priv.headers.get('cache-control') ?? '', /private/);
+});
+
 test('GET /api/markings：bvid 校验与批量上限不 500', async () => {
   assert.deepEqual((await get('/api/markings?bvids=BAD')).body.markings, {});
   const fifty = Array.from({ length: 60 }, () => newBvid()).join(',');

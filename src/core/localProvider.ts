@@ -10,8 +10,11 @@ import { getSubmissions } from './submissions';
 export class LocalMarkProvider implements MarkProvider {
   constructor(private base: MarkProvider) {}
 
-  async getMarkings(bvids: string[]): Promise<Map<string, VideoMarkings>> {
-    const result = await this.base.getMarkings(bvids);
+  async getMarkings(
+    bvids: string[],
+    opts?: { fresh?: boolean },
+  ): Promise<Map<string, VideoMarkings>> {
+    const result = await this.base.getMarkings(bvids, opts);
     const submissions = await getSubmissions();
     if (submissions.length === 0) return result;
 

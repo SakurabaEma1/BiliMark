@@ -1,0 +1,9 @@
+name = "bilimark-api"
+main = "worker.ts"
+compatibility_date = "2026-09-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "bilimark"
+# `wrangler d1 create bilimark` 输出的 database_id 填到这里
+database_id = "REPLACE_WITH_YOUR_D1_ID"

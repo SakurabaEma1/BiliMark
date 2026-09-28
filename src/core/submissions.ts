@@ -15,6 +15,8 @@ export interface StoredSubmission {
   regionV2?: number | null;
   upMid?: number | null;
   upName?: string;
+  /** 提交时的视频时长（秒） */
+  duration?: number | null;
 }
 
 const KEY = 'bmk_submissions';
