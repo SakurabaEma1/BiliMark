@@ -409,6 +409,31 @@ test('v0.4 分类扩展：盗视频必填原链接/3票确认；黑流量观点�
   assert.equal(avMark.find((e) => e.category === 'clickbait').aiDeclared, true, '声明条目为 true');
 });
 
+test('管理端点：recent-submissions 含 public_id；revoke-lv6 撤销豁免', async () => {
+  const bvid = newBvid();
+  const pid = newId();
+  await submitSimple(bvid, pid, { claimedLv6: true });
+
+  const items = (
+    await (
+      await fetch(BASE + '/api/admin/recent-submissions?limit=10', { headers: { 'X-Admin-Key': ADMIN_KEY } })
+    ).json()
+  ).items;
+  const item = items.find((i) => i.bvid === bvid);
+  assert.ok(item, 'recent 清单含新提交');
+  assert.ok(/^[0-9a-f]{64}$/.test(item.public_id), '含完整 public_id（定位恶意者用）');
+
+  const rev = await post('/api/admin/revoke-lv6', { id: item.id }, { 'X-Admin-Key': ADMIN_KEY });
+  assert.equal(rev.status, 200);
+  assert.equal(rev.body.revoked, 1);
+  const claimed = (
+    await (await fetch(BASE + '/api/admin/claimed-lv6', { headers: { 'X-Admin-Key': ADMIN_KEY } })).json()
+  ).items;
+  assert.ok(!claimed.some((i) => i.id === item.id), '撤销后不再出现在 claimed 清单');
+  const rev2 = await post('/api/admin/revoke-lv6', { id: item.id }, { 'X-Admin-Key': ADMIN_KEY });
+  assert.equal(rev2.body.revoked, 0, '重复撤销幂等');
+});
+
 test('GET /api/markings：bvid 校验与批量上限不 500', async () => {
   assert.deepEqual((await get('/api/markings?bvids=BAD')).body.markings, {});
   const fifty = Array.from({ length: 60 }, () => newBvid()).join(',');

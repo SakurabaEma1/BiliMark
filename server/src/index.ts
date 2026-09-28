@@ -612,6 +612,36 @@ const server = createServer((req, res) => {
         sendJson(res, 200, { items });
         return;
       }
+      // 最近提交清单（含 public_id）：发现与定位恶意贡献者用（配合 shadowban）
+      if (req.method === 'GET' && url.pathname === '/api/admin/recent-submissions') {
+        const limit = Math.min(Number(url.searchParams.get('limit') ?? 50) || 50, 200);
+        const items = db
+          .prepare(
+            `SELECT id, bvid, category, reason, public_id, claimed_lv6, up_mid, up_name, created_at
+             FROM submissions ORDER BY created_at DESC LIMIT ?`,
+          )
+          .all(limit);
+        sendJson(res, 200, { items });
+        return;
+      }
+      // 撤销某条提交的 Lv6 豁免（GOVERNANCE.md「等级豁免」：抽查发现造假时回到新手期阈值）
+      if (req.method === 'POST' && url.pathname === '/api/admin/revoke-lv6') {
+        try {
+          const body = JSON.parse(await readBody(req)) as { id?: number };
+          const id = Number(body.id);
+          if (!Number.isInteger(id) || id <= 0) {
+            sendJson(res, 400, { error: 'invalid id' });
+            return;
+          }
+          const info = db
+            .prepare(`UPDATE submissions SET claimed_lv6 = 0 WHERE id = ? AND claimed_lv6 = 1`)
+            .run(id);
+          sendJson(res, 200, { ok: true, revoked: Number(info.changes) }); // 0 = 该条本无豁免
+        } catch {
+          sendJson(res, 400, { error: 'bad request' });
+        }
+        return;
+      }
       if (
         req.method === 'POST' &&
         (url.pathname === '/api/admin/shadowban' || url.pathname === '/api/admin/unshadowban')

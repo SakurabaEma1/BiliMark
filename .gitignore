@@ -15,3 +15,4 @@ Desktop.ini
 .DS_Store
 .wrangler/
 *.zip
+server/.admin-key

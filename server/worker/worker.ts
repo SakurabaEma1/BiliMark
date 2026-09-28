@@ -456,6 +456,35 @@ export default {
           ).results;
           return json({ items });
         }
+        // 最近提交清单（含 public_id）：发现与定位恶意贡献者用（配合 shadowban）
+        if (req.method === 'GET' && url.pathname === '/api/admin/recent-submissions') {
+          const limit = Math.min(Number(url.searchParams.get('limit') ?? 50) || 50, 200);
+          const items = (
+            await env.DB.prepare(
+              `SELECT id, bvid, category, reason, public_id, claimed_lv6, up_mid, up_name, created_at
+               FROM submissions ORDER BY created_at DESC LIMIT ?`,
+            )
+              .bind(limit)
+              .all<UnknownRow>()
+          ).results;
+          return json({ items });
+        }
+        // 撤销某条提交的 Lv6 豁免（GOVERNANCE.md「等级豁免」抽查发现造假时）
+        if (req.method === 'POST' && url.pathname === '/api/admin/revoke-lv6') {
+          try {
+            const body = (await req.json()) as { id?: number };
+            const id = Number(body.id);
+            if (!Number.isInteger(id) || id <= 0) return json({ error: 'invalid id' }, 400);
+            const info = await env.DB.prepare(
+              `UPDATE submissions SET claimed_lv6 = 0 WHERE id = ? AND claimed_lv6 = 1`,
+            )
+              .bind(id)
+              .run();
+            return json({ ok: true, revoked: info.meta.changes ?? 0 });
+          } catch {
+            return json({ error: 'bad request' }, 400);
+          }
+        }
         if (req.method === 'POST' && (url.pathname === '/api/admin/shadowban' || url.pathname === '/api/admin/unshadowban')) {
           try {
             const body = (await req.json()) as { publicId?: string; note?: string };
