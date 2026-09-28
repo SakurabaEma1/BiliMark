@@ -75,6 +75,8 @@
 
     <section id="tab-overview" class="active">
       <div class="stat"><div><b id="statSub">–</b><span>提交总量</span></div></div>
+      <div class="hint" style="margin:4px 0 2px">近 14 天提交趋势（柱高 = 当日提交数，数字 = 活跃贡献者）</div>
+      <div id="trend" style="display:flex;align-items:flex-end;gap:4px;height:90px;margin:6px 0 14px"></div>
       <table id="recentTable"><thead><tr>
         <th>id</th><th>时间</th><th>分类</th><th>理由</th><th>视频</th><th>状态</th><th class="actions">操作</th>
       </tr></thead><tbody></tbody></table>
@@ -168,9 +170,28 @@ function logout() {
   location.reload();
 }
 
+async function loadTrend() {
+  const { total, daily } = await api('/api/admin/stats?days=14');
+  $('statSub').textContent = total;
+  // 补齐 14 天日期轴（无数据的天补 0）
+  const map = new Map(daily.map((d) => [d.day, d]));
+  const days = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    days.push({ day: d, submissions: map.get(d)?.submissions ?? 0, contributors: map.get(d)?.contributors ?? 0 });
+  }
+  const max = Math.max(1, ...days.map((d) => d.submissions));
+  $('trend').innerHTML = days.map((d) => {
+    const h = Math.round((d.submissions / max) * 80);
+    return `<div style="flex:1;text-align:center" title="${d.day}：${d.submissions} 条提交 / ${d.contributors} 位贡献者">` +
+      `<div style="font-size:10px;color:#999">${d.submissions || ''}</div>` +
+      `<div style="height:${h}px;background:rgba(251,114,153,.55);border-radius:3px 3px 0 0;min-height:2px"></div>` +
+      `<div style="font-size:9px;color:#666;transform:rotate(-45deg) translateY(4px);white-space:nowrap">${d.day.slice(5)}</div></div>`;
+  }).join('');
+}
+
 async function loadOverview() {
-  const h = await api('/api/health');
-  $('statSub').textContent = h.submissions;
+  await loadTrend();
   const { items } = await api('/api/admin/recent-submissions?limit=50');
   const tb = $('recentTable').querySelector('tbody');
   tb.innerHTML = items.map((it) => {

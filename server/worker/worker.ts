@@ -555,6 +555,25 @@ export default {
           }
         }
 
+        // 提交趋势统计（面板概览）：每日提交数与活跃贡献者数
+        if (req.method === 'GET' && url.pathname === '/api/admin/stats') {
+          const days = Math.min(Number(url.searchParams.get('days') ?? 14) || 14, 90);
+          const since = Date.now() - days * 86_400_000;
+          const daily = (
+            await env.DB.prepare(
+              `SELECT date(created_at / 1000, 'unixepoch') AS day,
+                      COUNT(*) AS submissions,
+                      COUNT(DISTINCT public_id) AS contributors
+               FROM submissions WHERE created_at >= ?
+               GROUP BY day ORDER BY day ASC`,
+            )
+              .bind(since)
+              .all<{ day: string; submissions: number; contributors: number }>()
+          ).results;
+          const total = (await env.DB.prepare('SELECT COUNT(*) AS n FROM submissions').first<{ n: number }>())?.n ?? 0;
+          return json({ total, daily });
+        }
+
         // 当前管理员确认清单（面板「管理确认」页：撤销入口）
         if (req.method === 'GET' && url.pathname === '/api/admin/confirmations') {
           const items = (
