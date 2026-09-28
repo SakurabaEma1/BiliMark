@@ -2,8 +2,13 @@ name = "bilimark-api"
 main = "worker.ts"
 compatibility_date = "2026-09-01"
 
+# 自定义域名（workers.dev 国内不可达）：deploy 时自动建 DNS 记录并签发证书
+routes = [
+  { pattern = "api.bilimark.top", custom_domain = true }
+]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "bilimark"
 # `wrangler d1 create bilimark` 输出的 database_id 填到这里
-database_id = "REPLACE_WITH_YOUR_D1_ID"
+database_id = "82df3882-2ebb-42bb-a9ae-21ee00ef8b98"
