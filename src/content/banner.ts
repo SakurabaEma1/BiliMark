@@ -10,7 +10,6 @@ export interface BannerHandle {
 }
 
 export interface BannerOptions {
-  demo?: boolean;
   /** 投票需要：当前视频 BVID；提供时理由面板显示 👍/👎 */
   bvid?: string;
   /** UP 主信息（查成分外链用；来自播放页 __INITIAL_STATE__） */
@@ -40,7 +39,7 @@ export function createBanner(
   const pendingCount = entries.length - confirmed.length;
 
   const pill = document.createElement('span');
-  pill.className = 'bmk-pill' + (opts.demo ? ' bmk-pill--demo' : '');
+  pill.className = 'bmk-pill';
 
   // 纯待确认（如自己刚提交、尚无人确认）也展示——低置信，仅播放页
   const first = confirmed[0] ?? entries[0];
@@ -64,7 +63,7 @@ export function createBanner(
   pill.append(closeBtn);
 
   // 理由面板：body 顶层 portal，绕开标题容器的 overflow 裁切
-  const panel = buildDetails(entries, opts.demo ?? false, opts);
+  const panel = buildDetails(entries, opts);
   panel.hidden = true;
   document.body.appendChild(panel);
 
@@ -124,16 +123,12 @@ export function createBanner(
   return { destroy, isPanelOpen: () => !destroyed && !panel.hidden };
 }
 
-function buildDetails(
-  entries: MarkingEntry[],
-  demo: boolean,
-  opts: BannerOptions = {},
-): HTMLElement {
+function buildDetails(entries: MarkingEntry[], opts: BannerOptions = {}): HTMLElement {
   const box = document.createElement('div');
   box.className = 'bmk-pill__panel';
 
   // UP主警示（派生聚合）：面板顶部原始计数，不可提交、不折算分数（CONTEXT.md）
-  if (!demo && opts.upWarning && opts.upWarning.categories.length > 0) {
+  if (opts.upWarning && opts.upWarning.categories.length > 0) {
     const warnBox = document.createElement('div');
     warnBox.className = 'bmk-details__upwarning';
     for (const c of opts.upWarning.categories) {
@@ -162,7 +157,7 @@ function buildDetails(
       item.append(head, reason);
 
       // 投票（v0.3：一人一票可改票，服务器去重）
-      if (!demo && opts.bvid && opts.onVote) {
+      if (opts.bvid && opts.onVote) {
         const category = e.category;
         const votes = document.createElement('div');
         votes.className = 'bmk-details__votes';
@@ -201,15 +196,8 @@ function buildDetails(
     box.append(item);
   }
 
-  if (demo) {
-    const note = document.createElement('div');
-    note.className = 'bmk-details__demo-note';
-    note.textContent = STR.demoBannerNote;
-    box.append(note);
-  }
-
   // 查成分外联（CONTEXT.md「查成分外链」：纯深链跳转，不抓取不缓存第三方数据）
-  if (!demo && opts.up && opts.up.mid) {
+  if (opts.up && opts.up.mid) {
     const upRow = document.createElement('div');
     upRow.className = 'bmk-details__up';
     const a = document.createElement('a');
@@ -227,7 +215,7 @@ function buildDetails(
   box.append(disclaimer);
 
   // 申诉（CONTEXT.md「申诉」：争议解决机制 + 法律防御；渠道常量留空则只显示文案）
-  if (!demo) {
+  {
     const appeal = document.createElement('div');
     appeal.className = 'bmk-details__appeal';
     appeal.append(STR.appealNote);

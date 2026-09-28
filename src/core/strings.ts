@@ -10,9 +10,6 @@ export const STR = {
   disclaimer: '以上为社区用户标记，不代表平台或本插件立场。',
   evidenceLabel: '证据：',
   restoreTitle: '小电视避雷针：该视频有社区标记，点击展开',
-  demoChipLabel: '演示 · 3',
-  demoTip: '演示数据：此角标由 Popup 演示按钮触发，用于开发预览。',
-  demoBannerNote: '演示数据：此提示条由 Popup 演示按钮触发，用于开发预览。',
   appealNote: '该视频的 UP 主如认为标记不实，可',
   appealLinkText: '邮件申诉复核',
   appealUrl:

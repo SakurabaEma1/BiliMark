@@ -24,6 +24,6 @@ document.getElementById('save')!.addEventListener('click', () => {
 document.getElementById('reset')!.addEventListener('click', () => {
   input.value = DEFAULT_API_BASE;
   void setApiBase(DEFAULT_API_BASE).then(() => {
-    setHint('✓ 已恢复默认（本地开发服务器）。', 'ok');
+    setHint('✓ 已恢复默认（正式服务器）。', 'ok');
   });
 });

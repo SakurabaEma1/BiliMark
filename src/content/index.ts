@@ -6,7 +6,6 @@ import { FeedController } from './feedPage';
 import { mockProvider } from '../core/mockProvider';
 import { ApiProvider } from '../core/apiProvider';
 import { LocalMarkProvider } from '../core/localProvider';
-import { showDemoBanner, showDemoBadges } from './demo';
 import './content.css';
 
 interface Stoppable {
@@ -56,13 +55,7 @@ route(location.href);
 onUrlChange(route);
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg && msg.type === 'BMK_DEMO_BANNER') {
-    void showDemoBanner();
-    sendResponse({ ok: true });
-  } else if (msg && msg.type === 'BMK_DEMO_BADGES') {
-    showDemoBadges();
-    sendResponse({ ok: true });
-  } else if (msg && msg.type === 'BMK_REFRESH_MARKINGS') {
+  if (msg && msg.type === 'BMK_REFRESH_MARKINGS') {
     videoCtl?.refresh();
     sendResponse({ ok: true });
   }

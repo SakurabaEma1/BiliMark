@@ -17,10 +17,6 @@
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
-.bmk-pill--demo {
-  border-style: dashed;
-  border-color: #fb7299;
-}
 .bmk-pill b {
   color: #ffaa00;
   font-weight: 600;
@@ -134,11 +130,6 @@
 .bmk-details__appeal a {
   color: #9a9a9a;
 }
-.bmk-details__demo-note {
-  color: #fb7299;
-  font-size: 12px;
-  margin-top: 6px;
-}
 
 /* ===== Feed 角标 ===== */
 .bmk-chip {
@@ -156,11 +147,6 @@
   font-size: 12px;
   line-height: 1.6;
   cursor: default;
-}
-.bmk-chip--demo {
-  border-style: dashed;
-  border-color: #fb7299;
-  color: #fb7299;
 }
 .bmk-chip__tip {
   display: none;

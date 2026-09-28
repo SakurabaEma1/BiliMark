@@ -1,7 +1,7 @@
 import type { CategoryKey } from './types';
 
-/** 默认 API 基址：开发环境本地服务器。生产环境在扩展选项页配置正式域名。 */
-export const DEFAULT_API_BASE = 'http://127.0.0.1:8787';
+/** 默认 API 基址：正式服务器（api.bilimark.top）。本地开发在扩展选项页改为 http://127.0.0.1:8787。 */
+export const DEFAULT_API_BASE = 'https://api.bilimark.top';
 
 const KEY = 'bmk_api_base';
 let cachedBase: string | null = null;

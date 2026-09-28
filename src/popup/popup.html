@@ -19,43 +19,25 @@
     .sub {
       color: #9a9a9a;
       font-size: 12px;
-      margin-bottom: 10px;
+      margin-bottom: 4px;
+      word-break: break-all;
     }
     #hint {
       color: #aaaaaa;
       font-size: 12px;
-      margin-bottom: 4px;
+      margin-top: 8px;
       white-space: normal;
     }
     #hint b {
       color: #ffaa00;
-    }
-    hr {
-      border: none;
-      border-top: 1px dashed #444444;
-      margin: 10px 0 6px;
-    }
-    button.demo {
-      display: block;
-      width: 100%;
-      margin: 6px 0 0;
-      padding: 7px;
-      border: 1px dashed #fb7299;
-      border-radius: 6px;
-      background: transparent;
-      color: #fb7299;
-      cursor: pointer;
-      font-size: 12px;
     }
   </style>
 </head>
 <body>
   <h1>小电视避雷针</h1>
   <div class="sub">v0.3.0 · 社区标记数据 + 本地提交（待确认仅自己可见）</div>
+  <div class="sub">服务器：<span id="serverBase">…</span></div>
   <div id="hint">提交入口在<b>视频页标题区的「＋ 标记」按钮</b>：点击后在页面右侧填写并提交；「造谣」需要证据链接。</div>
-  <hr />
-  <button class="demo" id="demoBanner">在本页演示「播放页分类角标」</button>
-  <button class="demo" id="demoBadges">在本页演示「feed 角标」</button>
 
   <script src="popup.js"></script>
 </body>
