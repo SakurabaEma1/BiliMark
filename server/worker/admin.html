@@ -67,6 +67,8 @@
     <div class="tabs">
       <button data-tab="overview" class="active">概览</button>
       <button data-tab="lv6">Lv6 抽查</button>
+      <button data-tab="confs">管理确认</button>
+      <button data-tab="upwarn">UP警示</button>
       <button data-tab="audit">审计日志</button>
       <button data-tab="mods" id="modTab" style="display:none">Moderator 密钥</button>
     </div>
@@ -82,6 +84,20 @@
       <p class="hint">声明了 Lv6 豁免的提交。低频抽查：理由/证据敷衍且声明 Lv6 的，可撤销豁免（回到新手期阈值）并视情况封禁。</p>
       <table id="lv6Table"><thead><tr>
         <th>id</th><th>时间</th><th>分类</th><th>理由</th><th>视频</th><th class="actions">操作</th>
+      </tr></thead><tbody></tbody></table>
+    </section>
+
+    <section id="tab-confs">
+      <p class="hint">管理员直接确认的标记（不虚增票数）。社区投票达标后可在此撤销管理员确认，交还给社区。</p>
+      <table id="confTable"><thead><tr>
+        <th>视频</th><th>分类</th><th>确认人</th><th>时间</th><th class="actions">操作</th>
+      </tr></thead><tbody></tbody></table>
+    </section>
+
+    <section id="tab-upwarn">
+      <p class="hint">当前触发「UP主警示」的账号清单（同 UP 同分类多个视频被确认）。配合插件内的「查成分」外链使用。</p>
+      <table id="upwarnTable"><thead><tr>
+        <th>UP 主 (mid)</th><th>分类</th><th>已确认视频数</th>
       </tr></thead><tbody></tbody></table>
     </section>
 
@@ -164,7 +180,8 @@ async function loadOverview() {
       `<td><code>${it.bvid}</code>${it.claimed_lv6 ? ' <span class="hint">(Lv6)</span>' : ''}</td>` +
       `<td class="status-p" data-key="${it.bvid}|${it.category}">待查</td>` +
       `<td class="actions"><button data-act="confirm" data-bvid="${it.bvid}" data-cat="${it.category}">确认</button> ` +
-      `<button class="warn" data-act="ban" data-pid="${it.public_id}">封禁</button></td></tr>`;
+      `<button class="warn" data-act="ban" data-pid="${it.public_id}">封禁</button> ` +
+      `<button class="gray" data-act="del" data-id="${it.id}">删除</button></td></tr>`;
   }).join('') || '<tr><td colspan="7" class="hint">（暂无提交）</td></tr>';
   await refreshStatuses();
 }
@@ -203,6 +220,25 @@ async function loadLv6() {
   ).join('') || '<tr><td colspan="6" class="hint">（暂无 Lv6 声明）</td></tr>';
 }
 
+async function loadConfs() {
+  const { items } = await api('/api/admin/confirmations');
+  const tb = $('confTable').querySelector('tbody');
+  tb.innerHTML = items.map((it) => `<tr><td><code>${it.bvid}</code></td>` +
+    `<td><span class="cat">${CAT[it.category] || it.category}</span></td>` +
+    `<td>${esc(it.operator)}</td><td>${fmt(it.created_at)}</td>` +
+    `<td class="actions"><button data-act="unconfirm" data-bvid="${it.bvid}" data-cat="${it.category}">撤销确认</button></td></tr>`,
+  ).join('') || '<tr><td colspan="5" class="hint">（暂无管理员确认记录）</td></tr>';
+}
+
+async function loadUpwarn() {
+  const { upWarnings } = await api('/api/admin/upwarnings');
+  const tb = $('upwarnTable').querySelector('tbody');
+  const rows = Object.entries(upWarnings);
+  tb.innerHTML = rows.map(([mid, w]) => Object.entries(w.categories).map(([c, n]) =>
+    `<tr><td>${esc(w.name || '未知')} <code>(${mid})</code></td><td><span class="cat">${CAT[c] || c}</span></td><td><b>${n}</b> 个视频</td></tr>`,
+  ).join('')).join('') || '<tr><td colspan="3" class="hint">（当前没有 UP 主触发警示）</td></tr>';
+}
+
 async function loadAudit() {
   const { items } = await api('/api/admin/audit?limit=100');
   const tb = $('auditTable').querySelector('tbody');
@@ -235,6 +271,15 @@ document.addEventListener('click', async (ev) => {
       await api('/api/admin/shadowban', { method: 'POST', body: JSON.stringify({ publicId: btn.dataset.pid, note }) });
       msg('已影子封禁（其内容对全网隐藏、本人可见）', true);
       await loadOverview();
+    } else if (act === 'del') {
+      if (!confirm(`物理删除提交 #${btn.dataset.id}？（不可恢复；影子封禁更可逆，恶意用户建议用封禁）`)) return;
+      await api('/api/admin/delete-submission', { method: 'DELETE', body: JSON.stringify({ id: Number(btn.dataset.id) }) });
+      msg('已删除该条提交', true);
+      await loadOverview();
+    } else if (act === 'unconfirm') {
+      await api('/api/admin/unconfirm', { method: 'POST', body: JSON.stringify({ bvid: btn.dataset.bvid, category: btn.dataset.cat }) });
+      msg('已撤销管理员确认（交还社区投票）', true);
+      await loadConfs();
     } else if (act === 'revoke') {
       await api('/api/admin/revoke-lv6', { method: 'POST', body: JSON.stringify({ id: Number(btn.dataset.id) }) });
       msg('已撤销该条的 Lv6 豁免', true);
@@ -267,6 +312,8 @@ document.querySelectorAll('.tabs button').forEach((b) => {
     try {
       if (b.dataset.tab === 'overview') await loadOverview();
       if (b.dataset.tab === 'lv6') await loadLv6();
+      if (b.dataset.tab === 'confs') await loadConfs();
+      if (b.dataset.tab === 'upwarn') await loadUpwarn();
       if (b.dataset.tab === 'audit') await loadAudit();
       if (b.dataset.tab === 'mods') await loadMods();
     } catch (e) { msg('加载失败：' + e.message, false); }

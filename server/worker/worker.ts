@@ -555,6 +555,38 @@ export default {
           }
         }
 
+        // 当前管理员确认清单（面板「管理确认」页：撤销入口）
+        if (req.method === 'GET' && url.pathname === '/api/admin/confirmations') {
+          const items = (
+            await env.DB.prepare(`SELECT bvid, category, operator, created_at FROM admin_confirmations ORDER BY created_at DESC`).all<UnknownRow>()
+          ).results;
+          return json({ items });
+        }
+
+        // 触发中的 UP 主警示清单（全库聚合，管理监控用）
+        if (req.method === 'GET' && url.pathname === '/api/admin/upwarnings') {
+          const rows = (
+            await env.DB.prepare(`SELECT DISTINCT bvid FROM submissions WHERE up_mid IS NOT NULL`).all<{ bvid: string }>()
+          ).results;
+          const allBvids = rows.map((r) => r.bvid);
+          const { upWarnings } = allBvids.length > 0 ? await aggregate(env.DB, allBvids, null, true) : { upWarnings: {} };
+          return json({ upWarnings });
+        }
+
+        // 删除单条提交（物理删除，区别于影子封禁）
+        if (req.method === 'DELETE' && url.pathname === '/api/admin/delete-submission') {
+          try {
+            const body = (await req.json()) as { id?: number };
+            const id = Number(body.id);
+            if (!Number.isInteger(id) || id <= 0) return json({ error: 'invalid id' }, 400);
+            const info = await env.DB.prepare(`DELETE FROM submissions WHERE id = ?`).bind(id).run();
+            await adminLog(env.DB, 'delete-submission', String(id), auth.name);
+            return json({ ok: true, deleted: info.meta.changes ?? 0 });
+          } catch {
+            return json({ error: 'bad request' }, 400);
+          }
+        }
+
         // 审计日志
         if (req.method === 'GET' && url.pathname === '/api/admin/audit') {
           const limit = Math.min(Number(url.searchParams.get('limit') ?? 50) || 50, 200);

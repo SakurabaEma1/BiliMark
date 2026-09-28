@@ -43,7 +43,7 @@ function route(rawUrl: string): void {
     const feed = new FeedController(provider);
     feed.start();
     active.push(feed);
-  } else if (type === 'home' || type === 'search' || type === 'popular') {
+  } else if (type === 'home' || type === 'search' || type === 'popular' || type === 'space') {
     const feed = new FeedController(provider);
     feed.start();
     active.push(feed);

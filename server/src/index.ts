@@ -747,6 +747,44 @@ const server = createServer((req, res) => {
         return;
       }
 
+      // 当前管理员确认清单（面板「管理确认」页：撤销入口）
+      if (req.method === 'GET' && url.pathname === '/api/admin/confirmations') {
+        const items = db
+          .prepare(`SELECT bvid, category, operator, created_at FROM admin_confirmations ORDER BY created_at DESC`)
+          .all();
+        sendJson(res, 200, { items });
+        return;
+      }
+
+      // 触发中的 UP 主警示清单（全库聚合，管理监控用）
+      if (req.method === 'GET' && url.pathname === '/api/admin/upwarnings') {
+        const rows = db
+          .prepare(`SELECT DISTINCT bvid FROM submissions WHERE up_mid IS NOT NULL`)
+          .all() as unknown as Array<{ bvid: string }>;
+        const allBvids = rows.map((r) => r.bvid);
+        const { upWarnings } = allBvids.length > 0 ? aggregate(allBvids, null, true) : { upWarnings: {} };
+        sendJson(res, 200, { upWarnings });
+        return;
+      }
+
+      // 删除单条提交（物理删除，区别于影子封禁：精确清除单条，投票记录保留）
+      if (req.method === 'DELETE' && url.pathname === '/api/admin/delete-submission') {
+        try {
+          const body = JSON.parse(await readBody(req)) as { id?: number };
+          const id = Number(body.id);
+          if (!Number.isInteger(id) || id <= 0) {
+            sendJson(res, 400, { error: 'invalid id' });
+            return;
+          }
+          const info = db.prepare(`DELETE FROM submissions WHERE id = ?`).run(id);
+          adminLog('delete-submission', String(id), auth.name);
+          sendJson(res, 200, { ok: true, deleted: Number(info.changes) });
+        } catch {
+          sendJson(res, 400, { error: 'bad request' });
+        }
+        return;
+      }
+
       // 审计日志（分级治理可追溯）
       if (req.method === 'GET' && url.pathname === '/api/admin/audit') {
         const limit = Math.min(Number(url.searchParams.get('limit') ?? 50) || 50, 200);

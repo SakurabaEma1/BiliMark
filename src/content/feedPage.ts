@@ -4,11 +4,12 @@ import type { MarkingEntry, VideoMarkings } from '../core/types';
 import { categoryLabel } from '../core/types';
 import { STR } from '../core/strings';
 
-/** 视频卡片候选选择器：首页 / 搜索 / 热门 / 播放页右侧「相关视频」（属性包含匹配，兼容变体类名） */
+/** 视频卡片候选选择器：首页 / 搜索 / 热门 / 播放页右侧「相关视频」/ UP 空间页（属性包含匹配，兼容变体类名） */
 export const CARD_SELECTORS = [
   '[class*="bili-video-card"]', // 首页/搜索/热门（新版，含 __info 等 BEM 变体）
   '[class*="video-page-card"]', // 播放页右侧相关视频（含 small/big 变体）
   '.video-list-item', // 搜索页（旧版）
+  '.small-item', // UP 空间页投稿列表（space.bilibili.com）
 ];
 
 const SCAN_THROTTLE_MS = 150;
