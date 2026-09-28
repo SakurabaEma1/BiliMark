@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>小电视避雷针 · 管理面板</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.7 system-ui, sans-serif; background: #17171b; color: #d6d6d6; }
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 20px; background: #1e1e24; border-bottom: 1px solid #33333c; }
+  header h1 { font-size: 16px; margin: 0; color: #fb7299; }
+  header .who { color: #7ec97e; font-size: 12px; }
+  header .server { color: #888; font-size: 12px; }
+  main { max-width: 1080px; margin: 0 auto; padding: 18px 20px 60px; }
+  .login { max-width: 460px; margin: 60px auto; padding: 26px; background: #1e1e24; border: 1px solid #33333c; border-radius: 12px; }
+  .login h2 { margin: 0 0 6px; font-size: 15px; }
+  .login p { color: #999; font-size: 12px; margin: 0 0 14px; }
+  input, select { width: 100%; padding: 9px 11px; background: #26262e; color: #e6e6e6; border: 1px solid #44444e; border-radius: 8px; font: 13px/1.5 system-ui; }
+  button { padding: 7px 14px; background: rgba(251,114,153,.12); color: #fb7299; border: 1px solid rgba(251,114,153,.6); border-radius: 7px; cursor: pointer; font-size: 12px; }
+  button:hover { background: rgba(251,114,153,.22); }
+  button.gray { color: #aaa; border-color: #55555e; background: transparent; }
+  button.warn { color: #ff9a9a; border-color: rgba(255,122,122,.6); background: rgba(255,122,122,.08); }
+  button.ok { color: #7ec97e; border-color: rgba(126,201,126,.6); background: rgba(126,201,126,.08); }
+  .tabs { display: flex; gap: 6px; margin: 14px 0; flex-wrap: wrap; }
+  .tabs button { background: transparent; border-color: #44444e; color: #aaa; }
+  .tabs button.active { color: #ffaa00; border-color: #ffaa00; }
+  #msg { min-height: 20px; font-size: 13px; margin: 8px 0; }
+  #msg.ok { color: #7ec97e; } #msg.err { color: #ff7a7a; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; background: #1c1c22; border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid #2b2b33; vertical-align: top; }
+  th { color: #999; font-weight: 500; background: #202027; }
+  td code { font-size: 11px; color: #6ca4e8; word-break: break-all; }
+  .cat { display: inline-block; padding: 0 6px; border-radius: 8px; background: #2a2a33; font-size: 11px; }
+  .status-c { color: #7ec97e; } .status-p { color: #ffaa00; }
+  .stat { display: flex; gap: 14px; flex-wrap: wrap; margin: 10px 0; }
+  .stat div { background: #1e1e24; border: 1px solid #33333c; border-radius: 10px; padding: 10px 18px; }
+  .stat b { font-size: 20px; color: #ffaa00; }
+  .stat span { color: #999; font-size: 12px; display: block; }
+  .actions { white-space: nowrap; }
+  .hint { color: #777; font-size: 12px; }
+  .keyrow { display: flex; gap: 8px; margin: 8px 0; }
+  .keyrow input { flex: 1; }
+  .modkey-out { background: #26262e; border: 1px dashed #ffaa00; padding: 10px; border-radius: 8px; margin: 8px 0; word-break: break-all; }
+  section { display: none; } section.active { display: block; }
+</style>
+</head>
+<body>
+<header>
+  <h1>小电视避雷针 · 管理</h1>
+  <span class="server" id="serverHost"></span>
+  <span class="who" id="who"></span>
+  <span style="flex:1"></span>
+  <button class="gray" id="logoutBtn" style="display:none">退出登录</button>
+</header>
+<main>
+  <div id="msg"></div>
+
+  <div class="login" id="loginBox">
+    <h2>管理员登录</h2>
+    <p>输入管理密钥（owner 密钥或 moderator 密钥）。密钥只保存在本机浏览器。</p>
+    <div class="keyrow"><input id="keyInput" type="password" placeholder="管理密钥" /></div>
+    <div class="keyrow"><button id="loginBtn">登录</button></div>
+  </div>
+
+  <div id="panel" style="display:none">
+    <div class="tabs">
+      <button data-tab="overview" class="active">概览</button>
+      <button data-tab="lv6">Lv6 抽查</button>
+      <button data-tab="audit">审计日志</button>
+      <button data-tab="mods" id="modTab" style="display:none">Moderator 密钥</button>
+    </div>
+
+    <section id="tab-overview" class="active">
+      <div class="stat"><div><b id="statSub">–</b><span>提交总量</span></div></div>
+      <table id="recentTable"><thead><tr>
+        <th>id</th><th>时间</th><th>分类</th><th>理由</th><th>视频</th><th>状态</th><th class="actions">操作</th>
+      </tr></thead><tbody></tbody></table>
+    </section>
+
+    <section id="tab-lv6">
+      <p class="hint">声明了 Lv6 豁免的提交。低频抽查：理由/证据敷衍且声明 Lv6 的，可撤销豁免（回到新手期阈值）并视情况封禁。</p>
+      <table id="lv6Table"><thead><tr>
+        <th>id</th><th>时间</th><th>分类</th><th>理由</th><th>视频</th><th class="actions">操作</th>
+      </tr></thead><tbody></tbody></table>
+    </section>
+
+    <section id="tab-audit">
+      <p class="hint">全部管理操作记录（含 moderator 的操作，可追溯）。</p>
+      <table id="auditTable"><thead><tr>
+        <th>id</th><th>时间</th><th>操作</th><th>对象</th><th>操作人</th>
+      </tr></thead><tbody></tbody></table>
+    </section>
+
+    <section id="tab-mods">
+      <p class="hint">Moderator 密钥可分发给积极贡献者：能查看清单、强制确认、影子封禁、撤销 Lv6 豁免；不能管理密钥本身。所有操作进审计日志。</p>
+      <div class="keyrow"><input id="modName" placeholder="moderator 名称（如：用户昵称）" /><button id="modCreate">生成密钥</button></div>
+      <div id="modNewKey"></div>
+      <table id="modTable"><thead><tr>
+        <th>id</th><th>名称</th><th>状态</th><th>创建时间</th><th class="actions">操作</th>
+      </tr></thead><tbody></tbody></table>
+    </section>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const msg = (t, ok) => { const m = $('msg'); m.textContent = t; m.className = ok ? 'ok' : 'err'; };
+const CAT = { ai_low_effort: 'AI低创', clickbait: '标题党', misinformation: '造谣', stolen: '盗视频', engagement_bait: '黑流量' };
+const KEY_STORE = 'bmk_admin_key';
+const BASE = location.origin;
+$('serverHost').textContent = BASE;
+let KEY = localStorage.getItem(KEY_STORE) || '';
+let ROLE = null;
+
+async function api(path, init = {}) {
+  const res = await fetch(BASE + path, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': KEY, ...(init.headers || {}) },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(body.error || ('HTTP ' + res.status));
+    err.status = res.status;
+    throw err;
+  }
+  return body;
+}
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = (ts) => new Date(ts).toLocaleString('zh-CN', { hour12: false });
+
+async function login() {
+  KEY = $('keyInput').value.trim();
+  if (!KEY) return msg('请输入密钥', false);
+  try {
+    const who = await api('/api/admin/whoami');
+    ROLE = who.role;
+    localStorage.setItem(KEY_STORE, KEY);
+    $('who').textContent = `${who.name}（${who.role === 'owner' ? '最高管理员' : 'moderator'}）`;
+    $('loginBox').style.display = 'none';
+    $('panel').style.display = 'block';
+    $('logoutBtn').style.display = 'inline-block';
+    $('modTab').style.display = who.role === 'owner' ? 'inline-block' : 'none';
+    msg('已登录', true);
+    await loadOverview();
+  } catch (e) {
+    msg(e.status === 404 ? '密钥无效（或服务器未配置 owner 密钥）' : '登录失败：' + e.message, false);
+  }
+}
+
+function logout() {
+  localStorage.removeItem(KEY_STORE);
+  location.reload();
+}
+
+async function loadOverview() {
+  const h = await api('/api/health');
+  $('statSub').textContent = h.submissions;
+  const { items } = await api('/api/admin/recent-submissions?limit=50');
+  const tb = $('recentTable').querySelector('tbody');
+  tb.innerHTML = items.map((it) => {
+    return `<tr><td>#${it.id}</td><td>${fmt(it.created_at)}</td>` +
+      `<td><span class="cat">${CAT[it.category] || it.category}</span></td>` +
+      `<td>${esc(it.reason).slice(0, 60)}</td>` +
+      `<td><code>${it.bvid}</code>${it.claimed_lv6 ? ' <span class="hint">(Lv6)</span>' : ''}</td>` +
+      `<td class="status-p" data-key="${it.bvid}|${it.category}">待查</td>` +
+      `<td class="actions"><button data-act="confirm" data-bvid="${it.bvid}" data-cat="${it.category}">确认</button> ` +
+      `<button class="warn" data-act="ban" data-pid="${it.public_id}">封禁</button></td></tr>`;
+  }).join('') || '<tr><td colspan="7" class="hint">（暂无提交）</td></tr>';
+  await refreshStatuses();
+}
+
+async function refreshStatuses() {
+  // 用 bvids 查询拿真实状态填进状态列（管理员确认/社区确认都体现）
+  const table = $('recentTable');
+  const keyed = {};
+  table.querySelectorAll('td[data-key]').forEach((td) => {
+    const [bvid] = td.dataset.key.split('|');
+    (keyed[bvid] ??= []).push(td);
+  });
+  for (const bvid of Object.keys(keyed)) {
+    try {
+      const d = await api('/api/markings?bvids=' + bvid + '&r=' + Date.now());
+      for (const td of keyed[bvid]) {
+        const cat = td.dataset.key.split('|')[1];
+        const e = (d.markings[bvid] || []).find((x) => x.category === cat);
+        if (e) {
+          td.textContent = e.status === 'confirmed' ? `已确认 · ${e.confirmCount}` : `待确认 · ${e.confirmCount}`;
+          td.className = e.status === 'confirmed' ? 'status-c' : 'status-p';
+        } else { td.textContent = '已隐藏'; td.className = 'hint'; }
+      }
+    } catch { /* 忽略单条失败 */ }
+  }
+}
+
+async function loadLv6() {
+  const { items } = await api('/api/admin/claimed-lv6');
+  const tb = $('lv6Table').querySelector('tbody');
+  tb.innerHTML = items.map((it) => `<tr><td>#${it.id}</td><td>${fmt(it.created_at)}</td>` +
+    `<td><span class="cat">${CAT[it.category] || it.category}</span></td>` +
+    `<td>${esc(it.reason).slice(0, 50)}</td><td><code>${it.bvid}</code></td>` +
+    `<td class="actions"><button class="warn" data-act="revoke" data-id="${it.id}">撤销豁免</button> ` +
+    `<button class="warn" data-act="ban" data-pid="${it.public_id}">封禁</button></td></tr>`,
+  ).join('') || '<tr><td colspan="6" class="hint">（暂无 Lv6 声明）</td></tr>';
+}
+
+async function loadAudit() {
+  const { items } = await api('/api/admin/audit?limit=100');
+  const tb = $('auditTable').querySelector('tbody');
+  tb.innerHTML = items.map((it) => `<tr><td>#${it.id}</td><td>${fmt(it.created_at)}</td>` +
+    `<td><code>${esc(it.action)}</code></td><td>${esc(it.target)}</td><td>${esc(it.operator)}</td></tr>`,
+  ).join('') || '<tr><td colspan="5" class="hint">（暂无操作记录）</td></tr>';
+}
+
+async function loadMods() {
+  const { items } = await api('/api/admin/mod-keys');
+  const tb = $('modTable').querySelector('tbody');
+  tb.innerHTML = items.map((it) => `<tr><td>#${it.id}</td><td>${esc(it.name)}</td>` +
+    `<td>${it.revoked ? '<span class="hint">已吊销</span>' : '<span class="status-c">生效中</span>'}</td>` +
+    `<td>${fmt(it.created_at)}</td>` +
+    `<td class="actions">${it.revoked ? '' : `<button class="warn" data-act="modrevoke" data-id="${it.id}">吊销</button>`}</td></tr>`,
+  ).join('') || '<tr><td colspan="5" class="hint">（尚未分发任何 moderator 密钥）</td></tr>';
+}
+
+document.addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('button[data-act]');
+  if (!btn) return;
+  const act = btn.dataset.act;
+  try {
+    if (act === 'confirm') {
+      await api('/api/admin/confirm', { method: 'POST', body: JSON.stringify({ bvid: btn.dataset.bvid, category: btn.dataset.cat }) });
+      msg(`已确认 ${btn.dataset.bvid} 的「${CAT[btn.dataset.cat]}」标记（不虚增票数）`, true);
+      await loadOverview();
+    } else if (act === 'ban') {
+      const note = prompt('封禁备注（可选）：') ?? '';
+      await api('/api/admin/shadowban', { method: 'POST', body: JSON.stringify({ publicId: btn.dataset.pid, note }) });
+      msg('已影子封禁（其内容对全网隐藏、本人可见）', true);
+      await loadOverview();
+    } else if (act === 'revoke') {
+      await api('/api/admin/revoke-lv6', { method: 'POST', body: JSON.stringify({ id: Number(btn.dataset.id) }) });
+      msg('已撤销该条的 Lv6 豁免', true);
+      await loadLv6();
+    } else if (act === 'modrevoke') {
+      await api('/api/admin/mod-keys', { method: 'DELETE', body: JSON.stringify({ id: Number(btn.dataset.id) }) });
+      msg('已吊销该 moderator 密钥', true);
+      await loadMods();
+    }
+  } catch (e) {
+    msg('操作失败：' + e.message + (e.status === 404 ? '（密钥可能已失效）' : ''), false);
+  }
+});
+
+$('modCreate').addEventListener('click', async () => {
+  const name = $('modName').value.trim();
+  if (!name) return msg('请输入 moderator 名称', false);
+  try {
+    const r = await api('/api/admin/mod-keys', { method: 'POST', body: JSON.stringify({ name }) });
+    $('modNewKey').innerHTML = `<div class="modkey-out">「${esc(name)}」的密钥（<b>只显示这一次</b>，请立即复制发给对方）：<br><code>${r.key}</code></div>`;
+    await loadMods();
+  } catch (e) { msg('生成失败：' + e.message, false); }
+});
+
+document.querySelectorAll('.tabs button').forEach((b) => {
+  b.addEventListener('click', async () => {
+    document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('active', x === b));
+    document.querySelectorAll('section').forEach((s) => s.classList.remove('active'));
+    $('tab-' + b.dataset.tab).classList.add('active');
+    try {
+      if (b.dataset.tab === 'overview') await loadOverview();
+      if (b.dataset.tab === 'lv6') await loadLv6();
+      if (b.dataset.tab === 'audit') await loadAudit();
+      if (b.dataset.tab === 'mods') await loadMods();
+    } catch (e) { msg('加载失败：' + e.message, false); }
+  });
+});
+
+$('loginBtn').addEventListener('click', login);
+$('keyInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
+$('logoutBtn').addEventListener('click', logout);
+
+if (KEY) {
+  $('keyInput').value = KEY;
+  login();
+}
+</script>
+</body>
+</html>

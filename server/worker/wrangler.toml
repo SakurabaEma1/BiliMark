@@ -2,6 +2,10 @@ name = "bilimark-api"
 main = "worker.ts"
 compatibility_date = "2026-09-01"
 
+rules = [
+  { type = "Text", globs = ["**/admin.html"] }
+]
+
 # 自定义域名（workers.dev 国内不可达）：deploy 时自动建 DNS 记录并签发证书
 routes = [
   { pattern = "api.bilimark.top", custom_domain = true }

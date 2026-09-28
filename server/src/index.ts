@@ -6,10 +6,10 @@
  * 数据库就是一个 SQLite 文件，复制即备份，发布即全量（/database.json）。
  * 规模到了再拆文件、再换 Postgres。
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -43,6 +43,28 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS shadowbans (
     public_id TEXT PRIMARY KEY,
     note TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS mod_keys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    key_hash TEXT NOT NULL,
+    revoked INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS admin_confirmations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bvid TEXT NOT NULL,
+    category TEXT NOT NULL,
+    operator TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE(bvid, category)
+  );
+  CREATE TABLE IF NOT EXISTS admin_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    target TEXT NOT NULL,
+    operator TEXT NOT NULL,
     created_at INTEGER NOT NULL
   );
 `);
@@ -131,6 +153,28 @@ function sha256(input: string): string {
   return createHash('sha256').update(input).digest('hex');
 }
 
+// ---------- 管理鉴权分层：ADMIN_KEY=owner（最高级）；mod_keys 命中=moderator ----------
+function adminAuth(req: IncomingMessage): { role: 'owner' | 'mod'; name: string } | null {
+  const key = req.headers['x-admin-key'];
+  if (typeof key !== 'string' || key.length === 0) return null;
+  if (ADMIN_KEY && key === ADMIN_KEY) return { role: 'owner', name: 'owner' };
+  if (!ADMIN_KEY) return null; // owner 密钥未配置时 mod 密钥也不生效（防孤儿权限）
+  const row = db
+    .prepare(`SELECT name FROM mod_keys WHERE key_hash = ? AND revoked = 0`)
+    .get(sha256(key)) as { name: string } | undefined;
+  return row ? { role: 'mod', name: row.name } : null;
+}
+
+/** 管理操作审计（GOVERNANCE：分级治理需可追溯） */
+function adminLog(action: string, target: string, operator: string): void {
+  db.prepare(`INSERT INTO admin_log (action, target, operator, created_at) VALUES (?, ?, ?, ?)`).run(
+    action,
+    target,
+    operator,
+    Date.now(),
+  );
+}
+
 // ---------- 简易限流：每 IP 每分钟 120 次（RATE_LIMIT_MAX 可调，测试环境调高） ----------
 const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX ?? 120);
 const hits = new Map<string, { n: number; t: number }>();
@@ -185,6 +229,12 @@ function aggregate(
 
   const visSubs = subs.filter((s) => visible(s.public_id));
   const visVotes = votes.filter((v) => visible(v.public_id));
+
+  // 管理员直接确认（不虚增票数）：命中的 (视频,分类) 强制 confirmed，且优先于社区驳回
+  const adminConfirmedRows = db
+    .prepare(`SELECT bvid, category FROM admin_confirmations WHERE bvid IN (${placeholders})`)
+    .all(...bvids) as unknown as Array<{ bvid: string; category: string }>;
+  const adminConfirmed = new Set(adminConfirmedRows.map((r) => `${r.bvid}|${r.category}`));
 
   // 新手期：按贡献者全部提交的 id 序（=时间序）取前 N 条；claimed_lv6 豁免
   const contributors = [...new Set(visSubs.map((s) => s.public_id))];
@@ -249,11 +299,12 @@ function aggregate(
   }
   const upCounts = new Map<number, { name: string; categories: Map<string, number> }>();
   for (const [key, agg] of byKey) {
-    if (agg.net <= HIDE_THRESHOLD) continue; // 驳回：对全网隐藏
+    const isAdminConfirmed = adminConfirmed.has(key);
+    if (agg.net <= HIDE_THRESHOLD && !isAdminConfirmed) continue; // 驳回：对全网隐藏（管理员确认优先）
     const [bvid, category] = key.split('|');
     // 新手期乘法器叠加在分类阈值上（观点类新手 = 10 票）；观点类门槛见 thresholdFor
     const threshold = thresholdFor(category) * (agg.allNovice ? NOVICE_MULTIPLIER : 1);
-    const confirmed = agg.net >= threshold;
+    const confirmed = isAdminConfirmed || agg.net >= threshold;
     const up = upOf.get(key);
     if (confirmed && up) {
       const rec = upCounts.get(up.upMid) ?? { name: up.upName, categories: new Map<string, number>() };
@@ -358,6 +409,17 @@ const server = createServer((req, res) => {
 
     if (rateLimited(ip)) {
       sendJson(res, 429, { error: 'rate limited' });
+      return;
+    }
+
+    // 管理面板（静态单页；密钥由使用者输入，仅存本机浏览器）
+    if (req.method === 'GET' && (url.pathname === '/admin' || url.pathname === '/admin/')) {
+      try {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(readFileSync(join(here, '..', 'worker', 'admin.html'), 'utf-8'));
+      } catch {
+        sendJson(res, 500, { error: 'admin page missing' });
+      }
       return;
     }
 
@@ -595,12 +657,106 @@ const server = createServer((req, res) => {
       return;
     }
 
-    // ---------- 管理端点（X-Admin-Key；未配置 ADMIN_KEY 时一律 404 不暴露存在）----------
+    // ---------- 管理端点（X-Admin-Key；owner=ADMIN_KEY，moderator=mod_keys 分发）----------
     if (url.pathname.startsWith('/api/admin/')) {
-      if (!ADMIN_KEY || req.headers['x-admin-key'] !== ADMIN_KEY) {
+      const auth = adminAuth(req);
+      if (!auth) {
         sendJson(res, 404, { error: 'not found' });
         return;
       }
+      const isOwner = auth.role === 'owner';
+
+      // 身份（面板显示用）
+      if (req.method === 'GET' && url.pathname === '/api/admin/whoami') {
+        sendJson(res, 200, { role: auth.role, name: auth.name });
+        return;
+      }
+
+      // moderator 密钥管理：仅 owner
+      if (url.pathname === '/api/admin/mod-keys') {
+        if (!isOwner) {
+          sendJson(res, 403, { error: 'owner only' });
+          return;
+        }
+        if (req.method === 'GET') {
+          const items = db.prepare(`SELECT id, name, revoked, created_at FROM mod_keys ORDER BY created_at DESC`).all();
+          sendJson(res, 200, { items });
+          return;
+        }
+        if (req.method === 'POST') {
+          try {
+            const body = JSON.parse(await readBody(req)) as { name?: string };
+            const name = (body.name ?? '').trim().slice(0, 32);
+            if (!name) {
+              sendJson(res, 400, { error: 'name required' });
+              return;
+            }
+            const key = `bmk_mod_${randomUUID().replace(/-/g, '')}`;
+            db.prepare(`INSERT INTO mod_keys (name, key_hash, created_at) VALUES (?, ?, ?)`).run(name, sha256(key), Date.now());
+            adminLog('mod-key-create', name, auth.name);
+            sendJson(res, 200, { ok: true, name, key }); // 明文仅此一次返回
+          } catch {
+            sendJson(res, 400, { error: 'bad request' });
+          }
+          return;
+        }
+        if (req.method === 'DELETE') {
+          try {
+            const body = JSON.parse(await readBody(req)) as { id?: number };
+            const id = Number(body.id);
+            if (!Number.isInteger(id)) {
+              sendJson(res, 400, { error: 'invalid id' });
+              return;
+            }
+            db.prepare(`UPDATE mod_keys SET revoked = 1 WHERE id = ?`).run(id);
+            adminLog('mod-key-revoke', String(id), auth.name);
+            sendJson(res, 200, { ok: true });
+          } catch {
+            sendJson(res, 400, { error: 'bad request' });
+          }
+          return;
+        }
+        sendJson(res, 404, { error: 'not found' });
+        return;
+      }
+
+      // 管理员直接确认/撤销确认：不虚增票数，仅覆盖聚合状态（管理员确认优先于社区驳回）
+      if (req.method === 'POST' && (url.pathname === '/api/admin/confirm' || url.pathname === '/api/admin/unconfirm')) {
+        try {
+          const body = JSON.parse(await readBody(req)) as { bvid?: string; category?: string };
+          const bvid = body.bvid ?? '';
+          const category = body.category ?? '';
+          if (!BVID_RE.test(bvid) || !CATEGORIES.has(category)) {
+            sendJson(res, 400, { error: 'invalid payload' });
+            return;
+          }
+          if (url.pathname.endsWith('/confirm')) {
+            db.prepare(
+              `INSERT INTO admin_confirmations (bvid, category, operator, created_at) VALUES (?, ?, ?, ?)
+               ON CONFLICT(bvid, category) DO UPDATE SET operator = excluded.operator, created_at = excluded.created_at`,
+            ).run(bvid, category, auth.name, Date.now());
+            adminLog('confirm', `${bvid}|${category}`, auth.name);
+          } else {
+            db.prepare(`DELETE FROM admin_confirmations WHERE bvid = ? AND category = ?`).run(bvid, category);
+            adminLog('unconfirm', `${bvid}|${category}`, auth.name);
+          }
+          sendJson(res, 200, { ok: true });
+        } catch {
+          sendJson(res, 400, { error: 'bad request' });
+        }
+        return;
+      }
+
+      // 审计日志（分级治理可追溯）
+      if (req.method === 'GET' && url.pathname === '/api/admin/audit') {
+        const limit = Math.min(Number(url.searchParams.get('limit') ?? 50) || 50, 200);
+        const items = db
+          .prepare(`SELECT id, action, target, operator, created_at FROM admin_log ORDER BY id DESC LIMIT ?`)
+          .all(limit);
+        sendJson(res, 200, { items });
+        return;
+      }
+
       // claimed-Lv6 清单：GOVERNANCE.md 的低频抽样核查用
       if (req.method === 'GET' && url.pathname === '/api/admin/claimed-lv6') {
         const items = db

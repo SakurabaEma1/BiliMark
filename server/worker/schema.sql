@@ -30,5 +30,27 @@ CREATE TABLE IF NOT EXISTS shadowbans (
   note TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS mod_keys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  key_hash TEXT NOT NULL,
+  revoked INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS admin_confirmations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bvid TEXT NOT NULL,
+  category TEXT NOT NULL,
+  operator TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE(bvid, category)
+);
+CREATE TABLE IF NOT EXISTS admin_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  action TEXT NOT NULL,
+  target TEXT NOT NULL,
+  operator TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_submissions_bvid_hash ON submissions(bvid_hash);
 CREATE INDEX IF NOT EXISTS idx_submissions_up_mid ON submissions(up_mid);

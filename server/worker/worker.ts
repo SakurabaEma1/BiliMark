@@ -1,3 +1,5 @@
+import ADMIN_HTML from './admin.html';
+
 /**
  * BiliMark Cloudflare Workers + D1 版（server/worker/，wrangler 自带转译，不进 tsc）。
  * 与 src/index.ts（node:sqlite 版）功能对齐、双份维护：改协议/治理逻辑时两边同步改。
@@ -24,6 +26,25 @@ interface Env {
   DB: D1Like;
   ADMIN_KEY?: string;
   RATE_LIMIT_MAX?: string;
+}
+
+// ---------- 管理鉴权分层（与 src/index.ts 同步）：ADMIN_KEY=owner；mod_keys 命中=moderator ----------
+async function adminAuth(req: Request, env: Env): Promise<{ role: 'owner' | 'mod'; name: string } | null> {
+  const key = req.headers.get('x-admin-key');
+  if (!key) return null;
+  if (env.ADMIN_KEY && key === env.ADMIN_KEY) return { role: 'owner', name: 'owner' };
+  if (!env.ADMIN_KEY) return null;
+  const row = await env.DB.prepare(`SELECT name FROM mod_keys WHERE key_hash = ? AND revoked = 0`)
+    .bind(await sha256(key))
+    .first<{ name: string }>();
+  return row ? { role: 'mod', name: row.name } : null;
+}
+
+async function adminLog(db: D1Like, action: string, target: string, operator: string): Promise<void> {
+  await db
+    .prepare(`INSERT INTO admin_log (action, target, operator, created_at) VALUES (?, ?, ?, ?)`)
+    .bind(action, target, operator, Date.now())
+    .run();
 }
 
 const CONFIRM_THRESHOLD = 3;
@@ -109,6 +130,15 @@ async function aggregate(
   const shadowSet = new Set(shadowRows.map((r) => r.public_id));
   const visible = (pid: string): boolean => !shadowSet.has(pid) || pid === asHash;
 
+  // 管理员直接确认（不虚增票数）：命中的 (视频,分类) 强制 confirmed，且优先于社区驳回
+  const adminConfirmedRows = (
+    await db
+      .prepare(`SELECT bvid, category FROM admin_confirmations WHERE bvid IN (${placeholders})`)
+      .bind(...bvids)
+      .all<{ bvid: string; category: string }>()
+  ).results;
+  const adminConfirmed = new Set(adminConfirmedRows.map((r) => `${r.bvid}|${r.category}`));
+
   const visSubs = subs.filter((s) => visible(s.public_id));
   const visVotes = votes.filter((v) => visible(v.public_id));
 
@@ -164,10 +194,11 @@ async function aggregate(
   }
   const upCounts = new Map<number, { name: string; categories: Map<string, number> }>();
   for (const [key, agg] of byKey) {
-    if (agg.net <= HIDE_THRESHOLD) continue;
+    const isAdminConfirmed = adminConfirmed.has(key);
+    if (agg.net <= HIDE_THRESHOLD && !isAdminConfirmed) continue;
     const [bvid, category] = key.split('|');
     const threshold = thresholdFor(category) * (agg.allNovice ? NOVICE_MULTIPLIER : 1);
-    const confirmed = agg.net >= threshold;
+    const confirmed = isAdminConfirmed || agg.net >= threshold;
     const up = upOf.get(key);
     if (confirmed && up) {
       const rec = upCounts.get(up.upMid) ?? { name: up.upName, categories: new Map<string, number>() };
@@ -256,6 +287,11 @@ export default {
         } });
       }
       if (rateLimited(ip, Number(env.RATE_LIMIT_MAX ?? 120))) return json({ error: 'rate limited' }, 429);
+
+      // 管理面板（静态单页；密钥由使用者输入，仅存本机浏览器）
+      if (req.method === 'GET' && (url.pathname === '/admin' || url.pathname === '/admin/')) {
+        return new Response(ADMIN_HTML, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      }
 
       // GET /api/health
       if (req.method === 'GET' && url.pathname === '/api/health') {
@@ -443,11 +479,93 @@ export default {
         });
       }
 
-      // ---------- 管理端点 ----------
+      // ---------- 管理端点（owner=ADMIN_KEY；moderator=mod_keys 分发）----------
       if (url.pathname.startsWith('/api/admin/')) {
-        if (!env.ADMIN_KEY || req.headers.get('x-admin-key') !== env.ADMIN_KEY) {
+        const auth = await adminAuth(req, env);
+        if (!auth) return json({ error: 'not found' }, 404);
+        const isOwner = auth.role === 'owner';
+
+        if (req.method === 'GET' && url.pathname === '/api/admin/whoami') {
+          return json({ role: auth.role, name: auth.name });
+        }
+
+        // moderator 密钥管理：仅 owner
+        if (url.pathname === '/api/admin/mod-keys') {
+          if (!isOwner) return json({ error: 'owner only' }, 403);
+          if (req.method === 'GET') {
+            const items = (
+              await env.DB.prepare(`SELECT id, name, revoked, created_at FROM mod_keys ORDER BY created_at DESC`).all<UnknownRow>()
+            ).results;
+            return json({ items });
+          }
+          if (req.method === 'POST') {
+            try {
+              const body = (await req.json()) as { name?: string };
+              const name = (body.name ?? '').trim().slice(0, 32);
+              if (!name) return json({ error: 'name required' }, 400);
+              const key = `bmk_mod_${crypto.randomUUID().replace(/-/g, '')}`;
+              await env.DB.prepare(`INSERT INTO mod_keys (name, key_hash, created_at) VALUES (?, ?, ?)`)
+                .bind(name, await sha256(key), Date.now())
+                .run();
+              await adminLog(env.DB, 'mod-key-create', name, auth.name);
+              return json({ ok: true, name, key }); // 明文仅此一次
+            } catch {
+              return json({ error: 'bad request' }, 400);
+            }
+          }
+          if (req.method === 'DELETE') {
+            try {
+              const body = (await req.json()) as { id?: number };
+              const id = Number(body.id);
+              if (!Number.isInteger(id)) return json({ error: 'invalid id' }, 400);
+              await env.DB.prepare(`UPDATE mod_keys SET revoked = 1 WHERE id = ?`).bind(id).run();
+              await adminLog(env.DB, 'mod-key-revoke', String(id), auth.name);
+              return json({ ok: true });
+            } catch {
+              return json({ error: 'bad request' }, 400);
+            }
+          }
           return json({ error: 'not found' }, 404);
         }
+
+        // 管理员直接确认/撤销确认（不虚增票数，管理员确认优先于社区驳回）
+        if (req.method === 'POST' && (url.pathname === '/api/admin/confirm' || url.pathname === '/api/admin/unconfirm')) {
+          try {
+            const body = (await req.json()) as { bvid?: string; category?: string };
+            const bvid = body.bvid ?? '';
+            const category = body.category ?? '';
+            if (!BVID_RE.test(bvid) || !CATEGORIES.has(category)) return json({ error: 'invalid payload' }, 400);
+            if (url.pathname.endsWith('/confirm')) {
+              await env.DB.prepare(
+                `INSERT INTO admin_confirmations (bvid, category, operator, created_at) VALUES (?, ?, ?, ?)
+                 ON CONFLICT(bvid, category) DO UPDATE SET operator = excluded.operator, created_at = excluded.created_at`,
+              )
+                .bind(bvid, category, auth.name, Date.now())
+                .run();
+              await adminLog(env.DB, 'confirm', `${bvid}|${category}`, auth.name);
+            } else {
+              await env.DB.prepare(`DELETE FROM admin_confirmations WHERE bvid = ? AND category = ?`)
+                .bind(bvid, category)
+                .run();
+              await adminLog(env.DB, 'unconfirm', `${bvid}|${category}`, auth.name);
+            }
+            return json({ ok: true });
+          } catch {
+            return json({ error: 'bad request' }, 400);
+          }
+        }
+
+        // 审计日志
+        if (req.method === 'GET' && url.pathname === '/api/admin/audit') {
+          const limit = Math.min(Number(url.searchParams.get('limit') ?? 50) || 50, 200);
+          const items = (
+            await env.DB.prepare(`SELECT id, action, target, operator, created_at FROM admin_log ORDER BY id DESC LIMIT ?`)
+              .bind(limit)
+              .all<UnknownRow>()
+          ).results;
+          return json({ items });
+        }
+
         if (req.method === 'GET' && url.pathname === '/api/admin/claimed-lv6') {
           const items = (
             await env.DB.prepare(

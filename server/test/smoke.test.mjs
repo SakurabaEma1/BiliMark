@@ -434,6 +434,52 @@ test('管理端点：recent-submissions 含 public_id；revoke-lv6 撤销豁免'
   assert.equal(rev2.body.revoked, 0, '重复撤销幂等');
 });
 
+test('管理分级：mod 密钥鉴权/强制确认覆盖（不虚增票数）/审计日志/mod 无密钥管理权', async () => {
+  // owner 生成 mod 密钥
+  const mk = await post('/api/admin/mod-keys', { name: '测试mod' }, { 'X-Admin-Key': ADMIN_KEY });
+  assert.equal(mk.status, 200);
+  assert.ok(String(mk.body.key).startsWith('bmk_mod_'), 'mod 密钥带前缀');
+
+  // whoami：mod 身份
+  const who = await (await fetch(BASE + '/api/admin/whoami', { headers: { 'X-Admin-Key': mk.body.key } })).json();
+  assert.deepEqual(who, { role: 'mod', name: '测试mod' });
+
+  // mod 不能管理密钥
+  const forbidden = await fetch(BASE + '/api/admin/mod-keys', { headers: { 'X-Admin-Key': mk.body.key } });
+  assert.equal(forbidden.status, 403);
+
+  // mod 强制确认：pending（net=1）→ confirmed，且票数不虚增
+  const bvid = newBvid();
+  await submitSimple(bvid, newId());
+  assert.equal((await get(`/api/markings?bvids=${bvid}`)).body.markings[bvid][0].status, 'pending');
+  const cf = await post('/api/admin/confirm', { bvid, category: CAT }, { 'X-Admin-Key': mk.body.key });
+  assert.equal(cf.status, 200);
+  const after = (await get(`/api/markings?bvids=${bvid}`)).body.markings[bvid][0];
+  assert.equal(after.status, 'confirmed', '管理员确认覆盖投票门槛');
+  assert.equal(after.confirmCount, 1, '不虚增票数（仍显示原始计数）');
+
+  // 撤销确认 → 恢复 pending
+  await post('/api/admin/unconfirm', { bvid, category: CAT }, { 'X-Admin-Key': mk.body.key });
+  assert.equal((await get(`/api/markings?bvids=${bvid}`)).body.markings[bvid][0].status, 'pending');
+
+  // 审计日志：mod 的操作可追溯
+  const audit = (
+    await (await fetch(BASE + '/api/admin/audit?limit=20', { headers: { 'X-Admin-Key': ADMIN_KEY } })).json()
+  ).items;
+  assert.ok(audit.some((a) => a.action === 'confirm' && a.target === `${bvid}|${CAT}` && a.operator === '测试mod'), '审计含 mod 操作');
+
+  // 清理：吊销测试 mod 密钥
+  const list = (await (await fetch(BASE + '/api/admin/mod-keys', { headers: { 'X-Admin-Key': ADMIN_KEY } })).json()).items;
+  const mod = list.find((m) => m.name === '测试mod');
+  await fetch(BASE + '/api/admin/mod-keys', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY },
+    body: JSON.stringify({ id: mod.id }),
+  });
+  const deadWho = await fetch(BASE + '/api/admin/whoami', { headers: { 'X-Admin-Key': mk.body.key } });
+  assert.equal(deadWho.status, 404, '吊销后 mod 密钥失效');
+});
+
 test('GET /api/markings：bvid 校验与批量上限不 500', async () => {
   assert.deepEqual((await get('/api/markings?bvids=BAD')).body.markings, {});
   const fifty = Array.from({ length: 60 }, () => newBvid()).join(',');
