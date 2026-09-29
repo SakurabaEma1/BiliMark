@@ -41,6 +41,9 @@ let currentBvid: string | null = null;
 let onChanged: () => void = () => {};
 let outsideClickHandler: ((e: MouseEvent) => void) | null = null;
 
+/** 撤回后的草稿（页面会话级）：重提时预填分类/理由/证据，撤回重提不用重新打字 */
+const drafts = new Map<string, { category: CategoryKey; reason: string; evidence: string[] }>();
+
 /** 页面右侧的提交/管理面板（body 顶层 portal）：点击「＋标记」后开/关，贴着按钮弹出 */
 export function toggleSubmissionPanel(
   anchorPill: HTMLElement,
@@ -175,8 +178,9 @@ function renderManage(body: HTMLElement, subs: StoredSubmission[]): void {
           return;
         }
         await retractSubmission(currentBvid, s.category);
-        closePanel();
+        drafts.set(currentBvid, { category: s.category, reason: s.reason, evidence: [...s.evidence] });
         onChanged();
+        await renderContent(); // 不关面板：以草稿预填的提交表单继续展示，方便调整后重提
       })();
     });
     card.append(retractBtn);
@@ -191,6 +195,7 @@ function renderManage(body: HTMLElement, subs: StoredSubmission[]): void {
 
 function renderForm(body: HTMLElement): void {
   let selectedCat: CategoryKey | null = null;
+  const draft = currentBvid ? drafts.get(currentBvid) : undefined;
 
   const catRow = document.createElement('div');
   catRow.className = 'bmk-panel__cats';
@@ -210,6 +215,7 @@ function renderForm(body: HTMLElement): void {
     btn.className = 'bmk-panel__cat';
     btn.dataset.cat = cat.key;
     btn.textContent = cat.label;
+    // 切换分类不清空已填理由（保留用户输入），仅切换证据栏与理由模板
     btn.addEventListener('click', () => {
       selectedCat = cat.key;
       catButtons.forEach((b) => b.classList.toggle('active', b === btn));
@@ -240,6 +246,19 @@ function renderForm(body: HTMLElement): void {
   });
 
   body.append(catRow, reasonLabel, presetsRow, reason, evidenceLabel, evidence, hint, submit);
+
+  // 撤回草稿：预选原分类、恢复理由与证据（在证据元素入 DOM 后执行，可见性状态才生效）
+  if (draft) {
+    const btn = catButtons.find((b) => b.dataset.cat === draft.category);
+    if (btn) {
+      btn.classList.add('active');
+      selectedCat = draft.category;
+      setEvidenceState(body, draft.category);
+      fillPresets(presetsRow, draft.category, reason);
+    }
+    reason.value = draft.reason;
+    evidence.value = draft.evidence.join(' ');
+  }
 }
 
 /** 按分类填充常用理由 chips，点击填入理由栏 */
@@ -323,6 +342,7 @@ async function handleSubmit(
     aiDeclared: readAiDeclaredFromDom(),
   });
   const synced = ok || status === 409; // 409 = 该标记已在社区，视为同步完成
+  drafts.delete(currentBvid); // 草稿已落地为提交，避免下次误恢复
   const submission: StoredSubmission = {
     bvid: currentBvid,
     category: selectedCat,
