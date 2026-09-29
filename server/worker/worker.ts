@@ -53,6 +53,7 @@ const NOVICE_SUBMISSIONS = 3;
 const NOVICE_MULTIPLIER = 2;
 const UP_WARNING_THRESHOLD = 3;
 const OPINION_CONFIRM_THRESHOLD = 5; // 观点类分类（黑流量）确认门槛，与 src/index.ts 同步
+const SERVER_VERSION = '0.5.0'; // 与 src/manifest.json / src/index.ts 保持同步（扩展更新检查用）
 const CATEGORIES = new Set([
   'low_effort', // 低创（v0.5 由 AI低创 改名扩义）
   'clickbait',
@@ -302,7 +303,7 @@ export default {
       // GET /api/health
       if (req.method === 'GET' && url.pathname === '/api/health') {
         const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM submissions').first<{ n: number }>();
-        return json({ ok: true, submissions: row?.n ?? 0 });
+        return json({ ok: true, submissions: row?.n ?? 0, version: SERVER_VERSION });
       }
 
       // GET /api/markings?hashes=<前8位,…> 或 ?bvids=BV…[&as=<本人哈希>]

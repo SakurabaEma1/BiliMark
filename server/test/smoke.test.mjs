@@ -115,6 +115,7 @@ test('health 就绪；库中仅含迁移预置的 1 条旧行', async () => {
   assert.equal(status, 200);
   assert.equal(body.ok, true);
   assert.equal(body.submissions, 1);
+  assert.ok(body.version, 'health 应返回版本号（扩展更新检查用）');
 });
 
 test('v0.5 改名迁移：旧 ai_low_effort 历史行启动时自动更名 low_effort', async () => {

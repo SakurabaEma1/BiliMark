@@ -113,6 +113,7 @@ const NOVICE_MULTIPLIER = 2; // 新手期确认阈值倍数（全新手标记需
 const UP_WARNING_THRESHOLD = 3; // UP主警示：同 UP 同分类「已确认」视频数门槛（CONTEXT.md，调优待定项）
 const OPINION_CONFIRM_THRESHOLD = 5; // 观点类分类（黑流量）确认门槛：判定主观性强，更高门槛对冲串子与误伤
 const ADMIN_KEY = process.env.ADMIN_KEY ?? ''; // 未设置则管理端点不可达（404，不暴露存在）
+const SERVER_VERSION = '0.5.0'; // 与 src/manifest.json 保持同步（扩展更新检查用，popup 对比后提示新版本）
 const CATEGORIES = new Set([
   'low_effort', // 低创（v0.5 由 AI低创 改名扩义：画面/信息量配比极低，不要求 AI 参与）
   'clickbait',
@@ -445,7 +446,7 @@ const server = createServer((req, res) => {
     // GET /api/health
     if (req.method === 'GET' && url.pathname === '/api/health') {
       const n = (db.prepare('SELECT COUNT(*) AS n FROM submissions').get() as { n: number }).n;
-      sendJson(res, 200, { ok: true, submissions: n });
+      sendJson(res, 200, { ok: true, submissions: n, version: SERVER_VERSION });
       return;
     }
 

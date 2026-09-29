@@ -31,13 +31,26 @@
     #hint b {
       color: #ffaa00;
     }
+    #update {
+      margin-top: 10px;
+      padding: 8px 10px;
+      background: rgba(255, 170, 0, 0.08);
+      border: 1px solid rgba(255, 170, 0, 0.45);
+      border-radius: 8px;
+      font-size: 12px;
+    }
+    #update a {
+      color: #ffaa00;
+      text-decoration: none;
+    }
   </style>
 </head>
 <body>
   <h1>小电视避雷针</h1>
-  <div class="sub">v0.4.0 · 社区标记数据 + 本地提交（待确认仅自己可见）</div>
+  <div class="sub"><span id="ver">…</span> · 社区标记数据 + 本地提交（待确认仅自己可见）</div>
   <div class="sub">服务器：<span id="serverBase">…</span></div>
   <div id="hint">提交入口在<b>视频页标题区的「＋ 标记」按钮</b>：点击后在页面右侧填写并提交；「造谣」需要证据链接。</div>
+  <div id="update" hidden><a href="https://github.com/SakurabaEma1/BiliMark/releases/latest" target="_blank" rel="noreferrer noopener">⚠ 检测到新版本，点此下载更新</a></div>
 
   <script src="popup.js"></script>
 </body>
