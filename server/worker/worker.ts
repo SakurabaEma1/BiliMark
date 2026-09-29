@@ -62,10 +62,12 @@ const CATEGORIES = new Set([
   'engagement_bait',
   'comment_toxicity', // 评论区慎入（v0.5 新增）：观点类；UP警示排除
 ]);
-/** 观点类分类确认阈值 5 票，事实类 3 票（v0.4/v0.5 分类扩展） */
+/** 观点类分类确认阈值 5 票，事实类 3 票（v0.4/v0.5 分类扩展；盗视频无证据按观点类门槛，与 src/index.ts 同步） */
 const OPINION_CATEGORIES = new Set(['engagement_bait', 'comment_toxicity']);
-function thresholdFor(category: string): number {
-  return OPINION_CATEGORIES.has(category) ? OPINION_CONFIRM_THRESHOLD : CONFIRM_THRESHOLD;
+function thresholdFor(category: string, hasEvidence: boolean): number {
+  if (OPINION_CATEGORIES.has(category)) return OPINION_CONFIRM_THRESHOLD;
+  if (category === 'stolen' && !hasEvidence) return OPINION_CONFIRM_THRESHOLD;
+  return CONFIRM_THRESHOLD;
 }
 const BVID_RE = /^BV[0-9A-Za-z]{10}$/;
 
@@ -200,7 +202,7 @@ async function aggregate(
     const isAdminConfirmed = adminConfirmed.has(key);
     if (agg.net <= HIDE_THRESHOLD && !isAdminConfirmed) continue;
     const [bvid, category] = key.split('|');
-    const threshold = thresholdFor(category) * (agg.allNovice ? NOVICE_MULTIPLIER : 1);
+    const threshold = thresholdFor(category, agg.evidence.size > 0) * (agg.allNovice ? NOVICE_MULTIPLIER : 1);
     const confirmed = isAdminConfirmed || agg.net >= threshold;
     const up = upOf.get(key);
     // 评论区慎入不进 UP主警示（与 src/index.ts 同步，2026-09-30 grill）
@@ -385,8 +387,7 @@ export default {
           }
           if (reason.length < 5 || reason.length > 500) return json({ error: 'reason must be 5-500 chars' }, 400);
           if (category === 'misinformation' && evidence.length === 0) return json({ error: 'misinformation requires evidence' }, 400);
-          // 盗视频：原视频链接必填（不限平台）
-          if (category === 'stolen' && evidence.length === 0) return json({ error: 'stolen requires source video link' }, 400);
+          // 盗视频：源视频链接选填（v0.5 两档门槛，与 src/index.ts 同步）
           if (privateId.length < 32) return json({ error: 'invalid privateId' }, 400);
 
           try {

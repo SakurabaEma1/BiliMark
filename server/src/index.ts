@@ -124,8 +124,14 @@ const CATEGORIES = new Set([
 ]);
 /** 观点类分类（判定主观性强）：确认门槛 5 票，事实类 3 票（v0.4/v0.5 分类扩展） */
 const OPINION_CATEGORIES = new Set(['engagement_bait', 'comment_toxicity']);
-function thresholdFor(category: string): number {
-  return OPINION_CATEGORIES.has(category) ? OPINION_CONFIRM_THRESHOLD : CONFIRM_THRESHOLD;
+/**
+ * 分类确认阈值（v0.5 盗视频两档门槛，2026-09-30 拍板）：
+ * 观点类恒 5 票；事实类 3 票；盗视频无证据链接时适用观点类门槛（后补链接自动降档）。
+ */
+function thresholdFor(category: string, hasEvidence: boolean): number {
+  if (OPINION_CATEGORIES.has(category)) return OPINION_CONFIRM_THRESHOLD;
+  if (category === 'stolen' && !hasEvidence) return OPINION_CONFIRM_THRESHOLD;
+  return CONFIRM_THRESHOLD;
 }
 const BVID_RE = /^BV[0-9A-Za-z]{10}$/;
 
@@ -314,8 +320,8 @@ function aggregate(
     const isAdminConfirmed = adminConfirmed.has(key);
     if (agg.net <= HIDE_THRESHOLD && !isAdminConfirmed) continue; // 驳回：对全网隐藏（管理员确认优先）
     const [bvid, category] = key.split('|');
-    // 新手期乘法器叠加在分类阈值上（观点类新手 = 10 票）；观点类门槛见 thresholdFor
-    const threshold = thresholdFor(category) * (agg.allNovice ? NOVICE_MULTIPLIER : 1);
+    // 新手期乘法器叠加在分类阈值上（观点类新手 = 10 票）；盗视频无证据按观点类门槛（两档门槛）
+    const threshold = thresholdFor(category, agg.evidence.size > 0) * (agg.allNovice ? NOVICE_MULTIPLIER : 1);
     const confirmed = isAdminConfirmed || agg.net >= threshold;
     const up = upOf.get(key);
     // 评论区慎入不进 UP主警示（2026-09-30 grill）：评论区氛围不是 UP 单方责任
@@ -537,11 +543,7 @@ const server = createServer((req, res) => {
           sendJson(res, 400, { error: 'misinformation requires evidence' });
           return;
         }
-        // 盗视频：原视频链接必填（对照依据；不限平台，http/https 链接即可）
-        if (category === 'stolen' && evidence.length === 0) {
-          sendJson(res, 400, { error: 'stolen requires source video link' });
-          return;
-        }
+        // 盗视频：源视频链接选填（v0.5 两档门槛——无链接按观点类门槛，后补自动降档）
         if (privateId.length < 32) {
           sendJson(res, 400, { error: 'invalid privateId' });
           return;

@@ -30,7 +30,11 @@ const REASON_PRESETS: Record<CategoryKey, string[]> = {
     '标题断章取义，与正片内容不符',
   ],
   misinformation: ['传播可证伪的不实信息，详见证据链接', '关键事实与权威来源矛盾（见证据）'],
-  stolen: ['搬运自其他平台，未获授权且未注明出处', '盗用他人视频冒充原创（原视频见链接）'],
+  stolen: [
+    '搬运自其他平台，未获授权且未注明出处',
+    '盗用他人视频冒充原创（原视频见链接）',
+    '搬运/盗用痕迹明显（他人水印、字幕组标识等），原视频待补',
+  ],
   staged: ['摆拍冒充真实记录（未声明演绎），有剧本痕迹', '剧情摆拍当成真事讲述，误导观众'],
   engagement_bait: ['刻意引战制造对立骗取互动', '靠争议话题骗评论骗流量，内容本身无价值'],
   comment_toxicity: ['评论区对骂/引战刷屏，正常讨论被淹没', '评论区已成战场，正常讨论被劝退'],
@@ -236,7 +240,7 @@ function renderForm(body: HTMLElement): void {
 
   const hint = document.createElement('div');
   hint.className = 'bmk-panel__hint';
-  hint.textContent = '选择分类后填写理由；「造谣」「盗视频」需附链接，「摆拍」证据选填。';
+  hint.textContent = '「造谣」需附证据链接；「盗视频」附原视频链接 3 票确认、不附 5 票；「摆拍」证据选填。';
 
   const submit = document.createElement('button');
   submit.className = 'bmk-panel__submit';
@@ -311,13 +315,9 @@ async function handleSubmit(
     setHint(`证据链接格式不对：${invalid}（需要 http/https 开头）`, hint);
     return;
   }
-  // 造谣/盗视频：证据（或原视频）链接必填——客户端友好校验，服务器同样拦截
+  // 造谣：证据链接必填（可证伪性依赖出处）——客户端友好校验，服务器同样拦截
   if (selectedCat === 'misinformation' && urls.length === 0) {
     setHint('「造谣」必须附证据链接（可证伪的对照出处）。', hint);
-    return;
-  }
-  if (selectedCat === 'stolen' && urls.length === 0) {
-    setHint('「盗视频」必须附原视频链接（对照出处，不限平台）。', hint);
     return;
   }
 
@@ -372,15 +372,15 @@ async function handleSubmit(
   }
 }
 
-/** 证据栏状态：造谣/盗视频必填、摆拍选填，其余隐藏；label 与占位随分类切换 */
+/** 证据栏状态：造谣必填、盗视频/摆拍选填，其余隐藏；label 与占位随分类切换 */
 function setEvidenceState(body: HTMLElement, cat: CategoryKey): void {
-  const required = cat === 'misinformation' || cat === 'stolen';
-  const optional = cat === 'staged';
+  const required = cat === 'misinformation';
+  const optional = cat === 'staged' || cat === 'stolen';
   const label = body.querySelector<HTMLElement>('.bmk-panel__label.bmk-panel__evidence');
   if (label) {
     label.textContent =
       cat === 'stolen'
-        ? '原视频链接（必填，对照出处，不限平台）'
+        ? '原视频链接（选填：附上 3 票确认，不附 5 票；找不到可留空）'
         : optional
           ? '证据链接（选填：演绎声明出处、原素材对照等）'
           : '证据链接（必填，多个用空格分隔）';

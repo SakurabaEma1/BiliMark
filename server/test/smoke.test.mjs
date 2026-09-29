@@ -389,7 +389,7 @@ test('隐私查询：hashes= 前缀命中 bvids= 同款数据；duration 入库'
 
 test('v0.4 分类扩展：盗视频必填原链接/3票确认；黑流量观点类5票；新手期叠加', async () => {
   const { createHash: ch2 } = await import('node:crypto');
-  // 1) stolen 无原链接 → 400；有 → 3 票确认（事实类标准阈值；提交者先毕业 3 条避开新手期）
+  // 1) stolen：无原链接也可提交（v0.5 选填）；附链接 → 3 票确认（事实类标准阈值；提交者先毕业 3 条避开新手期）
   const graduate = async (pid) => {
     for (let i = 0; i < 3; i++) {
       await post('/api/markings', { bvid: newBvid(), category: CAT, reason: '毕业用提交', evidence: [], privateId: pid });
@@ -397,7 +397,7 @@ test('v0.4 分类扩展：盗视频必填原链接/3票确认；黑流量观点�
   };
   const sv = newBvid();
   const noLink = await post('/api/markings', { bvid: sv, category: 'stolen', reason: '测试理由：搬运未注明出处', evidence: [], privateId: newId() });
-  assert.equal(noLink.status, 400, '盗视频缺原视频链接应 400');
+  assert.equal(noLink.status, 200, '盗视频无原视频链接应可提交（选填）');
   const pidS = newId();
   await graduate(pidS);
   assert.equal((await post('/api/markings', { bvid: sv, category: 'stolen', reason: '测试理由：搬运未注明出处', evidence: ['https://www.youtube.com/watch?v=test'], privateId: pidS })).status, 200);
@@ -580,4 +580,28 @@ test('v0.5 UP警示排除：评论区慎入确认再多也不触发 UP主警示'
     assert.equal(e.status, 'confirmed', '3 条慎入均已确认');
   }
   assert.equal(body.upWarnings['777002'] ?? undefined, undefined, '慎入确认不进 UP主警示');
+});
+
+test('v0.5 盗视频两档门槛：无链接 5 票待确认，后补链接自愈降档', async () => {
+  const graduate = async (pid) => {
+    for (let i = 0; i < 3; i++) {
+      await post('/api/markings', { bvid: newBvid(), category: CAT, reason: '毕业用提交', evidence: [], privateId: pid });
+    }
+  };
+  const sv = newBvid();
+  const pidA = newId();
+  await graduate(pidA);
+  // 无证据提交：net=1；无证据盗视频按观点类门槛 5 票
+  await post('/api/markings', { bvid: sv, category: 'stolen', reason: '测试理由：搬运未注明出处（暂无源链接）', evidence: [], privateId: pidA });
+  for (let i = 0; i < 2; i++) await vote(sv, 'stolen', 1, newId()); // net=3
+  let e = (await get(`/api/markings?bvids=${sv}`)).body.markings[sv].find((x) => x.category === 'stolen');
+  assert.equal(e.status, 'pending', '无证据盗视频 net=3 < 5 应待确认');
+  await vote(sv, 'stolen', 1, newId()); // net=4
+  e = (await get(`/api/markings?bvids=${sv}`)).body.markings[sv].find((x) => x.category === 'stolen');
+  assert.equal(e.status, 'pending', '无证据盗视频 net=4 < 5 仍待确认');
+  // 后补链接：另一贡献者带证据提交 → 聚合含证据 → 阈值降为 3 → net=5 确认（状态机自愈）
+  const pidB = newId();
+  await post('/api/markings', { bvid: sv, category: 'stolen', reason: '测试理由：补上原视频链接', evidence: ['https://www.youtube.com/watch?v=src'], privateId: pidB });
+  e = (await get(`/api/markings?bvids=${sv}`)).body.markings[sv].find((x) => x.category === 'stolen');
+  assert.equal(e.status, 'confirmed', '补证据后阈值降为 3，net=5 确认');
 });
