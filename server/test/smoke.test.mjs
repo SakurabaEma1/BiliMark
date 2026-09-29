@@ -16,7 +16,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const PORT = 8799;
 const BASE = `http://127.0.0.1:${PORT}`;
 const ADMIN_KEY = 'test-admin-key';
-const CAT = 'ai_low_effort';
+const CAT = 'low_effort'; // v0.5 由 AI低创 改名扩义
 
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 const newId = () => randomBytes(32).toString('hex');
@@ -25,6 +25,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let child;
 let dataDir;
+let migrationBvid; // v0.5 改名迁移的预置旧行
 
 async function get(path) {
   const res = await fetch(BASE + path);
@@ -62,6 +63,28 @@ const submitSimple = (bvid, privateId, extra = {}) =>
 
 before(async () => {
   dataDir = mkdtempSync(join(tmpdir(), 'bilimark-test-'));
+  // v0.5 改名迁移预置：在服务端建表前写入旧分类 id 的历史行，验证启动迁移（幂等 UPDATE）
+  {
+    const { DatabaseSync } = await import('node:sqlite');
+    const pre = new DatabaseSync(join(dataDir, 'bilimark.db'));
+    pre.exec(`CREATE TABLE IF NOT EXISTS submissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bvid TEXT NOT NULL,
+      category TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      evidence TEXT NOT NULL,
+      public_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE(bvid, category, public_id)
+    )`);
+    migrationBvid = newBvid();
+    pre
+      .prepare(
+        `INSERT INTO submissions (bvid, category, reason, evidence, public_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(migrationBvid, 'ai_low_effort', '迁移前旧分类历史行（冒烟测试预置）', '[]', newId(), Date.now());
+    pre.close();
+  }
   child = spawn(process.execPath, [join(here, '..', 'dist', 'index.js')], {
     env: { ...process.env, PORT: String(PORT), ADMIN_KEY, BILIMARK_DATA_DIR: dataDir, RATE_LIMIT_MAX: '100000' },
     stdio: 'ignore',
@@ -87,11 +110,17 @@ after(() => {
   }
 });
 
-test('health 就绪且初始为空库', async () => {
+test('health 就绪；库中仅含迁移预置的 1 条旧行', async () => {
   const { status, body } = await get('/api/health');
   assert.equal(status, 200);
   assert.equal(body.ok, true);
-  assert.equal(body.submissions, 0);
+  assert.equal(body.submissions, 1);
+});
+
+test('v0.5 改名迁移：旧 ai_low_effort 历史行启动时自动更名 low_effort', async () => {
+  const e = await entryOf(migrationBvid);
+  assert.notEqual(e, null, '迁移行应可查询');
+  assert.equal(e.category, 'low_effort', '旧分类 id 应已更名');
 });
 
 test('提交校验：无效分类/无效bvid/短理由/造谣无证据 → 400', async () => {
@@ -486,4 +515,69 @@ test('GET /api/markings：bvid 校验与批量上限不 500', async () => {
   const { status, body } = await get(`/api/markings?bvids=${fifty}`);
   assert.equal(status, 200);
   assert.deepEqual(body.markings, {});
+});
+
+test('v0.5 新分类：摆拍证据选填/事实类3票；评论区慎入证据可不填/观点类5票', async () => {
+  const graduate = async (pid) => {
+    for (let i = 0; i < 3; i++) {
+      await post('/api/markings', { bvid: newBvid(), category: CAT, reason: '毕业用提交', evidence: [], privateId: pid });
+    }
+  };
+  // staged：无证据可提交（选填），事实类标准阈值 3 票确认
+  const st = newBvid();
+  const pidSt = newId();
+  await graduate(pidSt);
+  assert.equal(
+    (await post('/api/markings', { bvid: st, category: 'staged', reason: '测试理由：摆拍冒充真实记录', evidence: [], privateId: pidSt })).status,
+    200,
+    '摆拍无证据应可提交（选填）',
+  );
+  await vote(st, 'staged', 1, newId());
+  await vote(st, 'staged', 1, newId());
+  const stEntry = (await get(`/api/markings?bvids=${st}`)).body.markings[st].find((e) => e.category === 'staged');
+  assert.equal(stEntry.status, 'confirmed', '摆拍 net=3 应确认（事实类）');
+
+  // comment_toxicity：观点类 5 票（提交者毕业）
+  const ct = newBvid();
+  const pidCt = newId();
+  await graduate(pidCt);
+  assert.equal(
+    (await post('/api/markings', { bvid: ct, category: 'comment_toxicity', reason: '测试理由：评论区对骂刷屏', evidence: [], privateId: pidCt })).status,
+    200,
+  );
+  for (let i = 0; i < 3; i++) await vote(ct, 'comment_toxicity', 1, newId());
+  let ctEntry = (await get(`/api/markings?bvids=${ct}`)).body.markings[ct].find((e) => e.category === 'comment_toxicity');
+  assert.equal(ctEntry.status, 'pending', '慎入 net=4 < 5 应待确认');
+  await vote(ct, 'comment_toxicity', 1, newId());
+  ctEntry = (await get(`/api/markings?bvids=${ct}`)).body.markings[ct].find((e) => e.category === 'comment_toxicity');
+  assert.equal(ctEntry.status, 'confirmed', '慎入 net=5 应确认（观点类门槛）');
+});
+
+test('v0.5 UP警示排除：评论区慎入确认再多也不触发 UP主警示', async () => {
+  const upMid = 777002;
+  const seeder = newId();
+  for (let i = 0; i < 3; i++) {
+    await post('/api/markings', { bvid: newBvid(), category: CAT, reason: '毕业用提交', evidence: [], privateId: seeder });
+  }
+  const targets = [];
+  for (let i = 0; i < 3; i++) {
+    const bvid = newBvid();
+    await post('/api/markings', {
+      bvid,
+      category: 'comment_toxicity',
+      reason: '测试理由：评论区被引战刷屏污染',
+      evidence: [],
+      privateId: seeder,
+      upMid,
+      upName: '慎入UP',
+    });
+    for (let j = 0; j < 4; j++) await vote(bvid, 'comment_toxicity', 1, newId()); // net=5 → confirmed
+    targets.push(bvid);
+  }
+  const body = (await get(`/api/markings?bvids=${targets.join(',')}`)).body;
+  for (const t of targets) {
+    const e = body.markings[t].find((x) => x.category === 'comment_toxicity');
+    assert.equal(e.status, 'confirmed', '3 条慎入均已确认');
+  }
+  assert.equal(body.upWarnings['777002'] ?? undefined, undefined, '慎入确认不进 UP主警示');
 });

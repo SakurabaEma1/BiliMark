@@ -54,15 +54,18 @@ const NOVICE_MULTIPLIER = 2;
 const UP_WARNING_THRESHOLD = 3;
 const OPINION_CONFIRM_THRESHOLD = 5; // 观点类分类（黑流量）确认门槛，与 src/index.ts 同步
 const CATEGORIES = new Set([
-  'ai_low_effort',
+  'low_effort', // 低创（v0.5 由 AI低创 改名扩义）
   'clickbait',
   'misinformation',
   'stolen',
+  'staged', // 摆拍（v0.5 新增）：证据选填
   'engagement_bait',
+  'comment_toxicity', // 评论区慎入（v0.5 新增）：观点类；UP警示排除
 ]);
-/** 分类确认阈值：观点类 5 票，事实类 3 票 */
+/** 观点类分类确认阈值 5 票，事实类 3 票（v0.4/v0.5 分类扩展） */
+const OPINION_CATEGORIES = new Set(['engagement_bait', 'comment_toxicity']);
 function thresholdFor(category: string): number {
-  return category === 'engagement_bait' ? OPINION_CONFIRM_THRESHOLD : CONFIRM_THRESHOLD;
+  return OPINION_CATEGORIES.has(category) ? OPINION_CONFIRM_THRESHOLD : CONFIRM_THRESHOLD;
 }
 const BVID_RE = /^BV[0-9A-Za-z]{10}$/;
 
@@ -200,7 +203,8 @@ async function aggregate(
     const threshold = thresholdFor(category) * (agg.allNovice ? NOVICE_MULTIPLIER : 1);
     const confirmed = isAdminConfirmed || agg.net >= threshold;
     const up = upOf.get(key);
-    if (confirmed && up) {
+    // 评论区慎入不进 UP主警示（与 src/index.ts 同步，2026-09-30 grill）
+    if (confirmed && up && category !== 'comment_toxicity') {
       const rec = upCounts.get(up.upMid) ?? { name: up.upName, categories: new Map<string, number>() };
       rec.categories.set(category, (rec.categories.get(category) ?? 0) + 1);
       upCounts.set(up.upMid, rec);

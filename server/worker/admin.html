@@ -123,7 +123,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const msg = (t, ok) => { const m = $('msg'); m.textContent = t; m.className = ok ? 'ok' : 'err'; };
-const CAT = { ai_low_effort: 'AI低创', clickbait: '标题党', misinformation: '造谣', stolen: '盗视频', engagement_bait: '黑流量' };
+const CAT = { low_effort: '低创', clickbait: '标题党', misinformation: '造谣', stolen: '盗视频', staged: '摆拍', engagement_bait: '黑流量', comment_toxicity: '评论区慎入' };
 const KEY_STORE = 'bmk_admin_key';
 const BASE = location.origin;
 $('serverHost').textContent = BASE;

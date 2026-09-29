@@ -27,9 +27,14 @@ const KEY = 'bmk_submissions';
  * 本地提交存储（v0.2：无服务器阶段的落地处）。
  * 接服务器后这里变为「待同步队列」，接口形态保持不变。
  */
+/** v0.5 改名迁移：本地存储的旧分类 id 归一化（AI低创 → 低创），避免旧记录显示裸 key */
+function normalizeCategory(s: StoredSubmission): StoredSubmission {
+  return (s.category as string) === 'ai_low_effort' ? { ...s, category: 'low_effort' } : s;
+}
+
 export async function getSubmissions(): Promise<StoredSubmission[]> {
   const res = await chrome.storage.local.get(KEY);
-  return (res[KEY] as StoredSubmission[] | undefined) ?? [];
+  return ((res[KEY] as StoredSubmission[] | undefined) ?? []).map(normalizeCategory);
 }
 
 export async function hasSubmission(bvid: string, category: CategoryKey): Promise<boolean> {

@@ -96,6 +96,15 @@ for (const ddl of [
   for (const r of rows) update.run(sha256(r.bvid), r.id);
 }
 
+// v0.5 数据迁移（幂等）：AI低创 → 低创（改名扩义，CONTEXT.md 2026-09-30 拍板；历史数据全保留）
+for (const sql of [
+  `UPDATE submissions SET category = 'low_effort' WHERE category = 'ai_low_effort'`,
+  `UPDATE votes SET category = 'low_effort' WHERE category = 'ai_low_effort'`,
+  `UPDATE admin_confirmations SET category = 'low_effort' WHERE category = 'ai_low_effort'`,
+]) {
+  db.exec(sql);
+}
+
 /** 调优待定项（FEASIBILITY.md 实现期待定项）：先写死，跑起来有数据再调 */
 const CONFIRM_THRESHOLD = 3; // 净票 ≥ 3 → 已确认
 const HIDE_THRESHOLD = -2; // 净票 ≤ -2 → 驳回（隐藏）
@@ -105,15 +114,18 @@ const UP_WARNING_THRESHOLD = 3; // UP主警示：同 UP 同分类「已确认」
 const OPINION_CONFIRM_THRESHOLD = 5; // 观点类分类（黑流量）确认门槛：判定主观性强，更高门槛对冲串子与误伤
 const ADMIN_KEY = process.env.ADMIN_KEY ?? ''; // 未设置则管理端点不可达（404，不暴露存在）
 const CATEGORIES = new Set([
-  'ai_low_effort',
+  'low_effort', // 低创（v0.5 由 AI低创 改名扩义：画面/信息量配比极低，不要求 AI 参与）
   'clickbait',
   'misinformation',
   'stolen', // 盗视频：原视频链接必填（不限平台，抖音/YouTube 等）
+  'staged', // 摆拍（v0.5 新增）：未声明"演绎"冒充真实；证据选填
   'engagement_bait', // 黑流量：引战/骗互动（观点类，更高门槛）
+  'comment_toxicity', // 评论区慎入（v0.5 新增）：评论区被对骂/引战/刷屏主导（观点类）
 ]);
-/** 分类确认阈值：观点类 5 票，事实类 3 票（v0.4 分类扩展） */
+/** 观点类分类（判定主观性强）：确认门槛 5 票，事实类 3 票（v0.4/v0.5 分类扩展） */
+const OPINION_CATEGORIES = new Set(['engagement_bait', 'comment_toxicity']);
 function thresholdFor(category: string): number {
-  return category === 'engagement_bait' ? OPINION_CONFIRM_THRESHOLD : CONFIRM_THRESHOLD;
+  return OPINION_CATEGORIES.has(category) ? OPINION_CONFIRM_THRESHOLD : CONFIRM_THRESHOLD;
 }
 const BVID_RE = /^BV[0-9A-Za-z]{10}$/;
 
@@ -306,7 +318,8 @@ function aggregate(
     const threshold = thresholdFor(category) * (agg.allNovice ? NOVICE_MULTIPLIER : 1);
     const confirmed = isAdminConfirmed || agg.net >= threshold;
     const up = upOf.get(key);
-    if (confirmed && up) {
+    // 评论区慎入不进 UP主警示（2026-09-30 grill）：评论区氛围不是 UP 单方责任
+    if (confirmed && up && category !== 'comment_toxicity') {
       const rec = upCounts.get(up.upMid) ?? { name: up.upName, categories: new Map<string, number>() };
       rec.categories.set(category, (rec.categories.get(category) ?? 0) + 1);
       upCounts.set(up.upMid, rec);

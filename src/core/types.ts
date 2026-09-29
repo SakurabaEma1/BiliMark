@@ -1,9 +1,16 @@
-export type CategoryKey = 'ai_low_effort' | 'clickbait' | 'misinformation' | 'stolen' | 'engagement_bait';
+export type CategoryKey =
+  | 'low_effort' // 低创（v0.5 由 AI低创 改名扩义：画面/信息量配比极低，不要求 AI 参与）
+  | 'clickbait'
+  | 'misinformation'
+  | 'stolen'
+  | 'staged' // 摆拍（v0.5 新增）：未声明"演绎"冒充真实，证据选填
+  | 'engagement_bait'
+  | 'comment_toxicity'; // 评论区慎入（v0.5 新增）：观点类；UP主警示聚合排除
 
 export type MarkingStatus = 'confirmed' | 'pending';
 
-/** 观点类分类（判定主观性强）：确认门槛更高，对冲串子与误伤（v0.4 分类扩展） */
-export const OPINION_CATEGORIES: ReadonlySet<CategoryKey> = new Set(['engagement_bait']);
+/** 观点类分类（判定主观性强）：确认门槛更高，对冲串子与误伤（v0.4/v0.5 分类扩展） */
+export const OPINION_CATEGORIES: ReadonlySet<CategoryKey> = new Set(['engagement_bait', 'comment_toxicity']);
 
 export interface MarkingEntry {
   category: CategoryKey;
@@ -36,11 +43,13 @@ export interface VideoMarkings {
 }
 
 export const CATEGORY_LABELS: Record<CategoryKey, string> = {
-  ai_low_effort: 'AI低创',
+  low_effort: '低创',
   clickbait: '标题党',
   misinformation: '造谣',
   stolen: '盗视频',
+  staged: '摆拍',
   engagement_bait: '黑流量',
+  comment_toxicity: '评论区慎入',
 };
 
 export function categoryLabel(key: CategoryKey): string {
