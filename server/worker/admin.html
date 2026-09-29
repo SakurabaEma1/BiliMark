@@ -218,9 +218,18 @@ async function fetchEntries(bvid) {
 function setStatusCell(td, entries, cat) {
   if (!entries) return; // 查询失败保持现状
   const e = entries.find((x) => x.category === cat);
-  if (!e) { td.textContent = '已隐藏'; td.className = 'hint'; return; }
+  const cbtn = td.closest('tr')?.querySelector('button[data-act="confirm"]');
+  if (!e) {
+    td.textContent = '已隐藏'; td.className = 'hint';
+    return; // 已隐藏行保留确认按钮：管理员确认可恢复被驳回的标记（GOVERNANCE）
+  }
   td.textContent = e.status === 'confirmed' ? `已确认 · ${e.confirmCount}` : `待确认 · ${e.confirmCount}`;
   td.className = e.status === 'confirmed' ? 'status-c' : 'status-p';
+  // 按钮状态与服务器对齐：已确认（社区达标或管理员确认）一律禁用，待确认恢复可点
+  if (cbtn) {
+    if (e.status === 'confirmed') { cbtn.disabled = true; cbtn.textContent = '已确认'; cbtn.className = 'gray'; }
+    else { cbtn.disabled = false; cbtn.textContent = '确认'; cbtn.className = ''; }
+  }
 }
 
 async function refreshStatuses() {
