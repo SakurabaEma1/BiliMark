@@ -58,7 +58,7 @@ npm run build        # 或 npm run dev（watch 模式）
 # 本地 API 服务器（http://127.0.0.1:8787）
 cd server && npm install && npm run dev
 
-# 服务器冒烟测试（14 用例，自起独立实例，不污染真实数据）
+# 服务器冒烟测试（自起独立实例，不污染真实数据）
 cd server && npm test
 ```
 
