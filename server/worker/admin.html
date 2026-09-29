@@ -207,27 +207,33 @@ async function loadOverview() {
   await refreshStatuses();
 }
 
+/** 查单个视频的聚合条目（失败返回 null，调用方保持现状） */
+async function fetchEntries(bvid) {
+  try {
+    const d = await api('/api/markings?bvids=' + bvid + '&r=' + Date.now());
+    return d.markings[bvid] || [];
+  } catch { return null; }
+}
+
+function setStatusCell(td, entries, cat) {
+  if (!entries) return; // 查询失败保持现状
+  const e = entries.find((x) => x.category === cat);
+  if (!e) { td.textContent = '已隐藏'; td.className = 'hint'; return; }
+  td.textContent = e.status === 'confirmed' ? `已确认 · ${e.confirmCount}` : `待确认 · ${e.confirmCount}`;
+  td.className = e.status === 'confirmed' ? 'status-c' : 'status-p';
+}
+
 async function refreshStatuses() {
-  // 用 bvids 查询拿真实状态填进状态列（管理员确认/社区确认都体现）
-  const table = $('recentTable');
+  // 用 bvids 查询拿真实状态填进状态列（管理员确认/社区确认都体现）；并行查询，避免逐条刷新闪动
   const keyed = {};
-  table.querySelectorAll('td[data-key]').forEach((td) => {
+  document.querySelectorAll('#recentTable td[data-key]').forEach((td) => {
     const [bvid] = td.dataset.key.split('|');
     (keyed[bvid] ??= []).push(td);
   });
-  for (const bvid of Object.keys(keyed)) {
-    try {
-      const d = await api('/api/markings?bvids=' + bvid + '&r=' + Date.now());
-      for (const td of keyed[bvid]) {
-        const cat = td.dataset.key.split('|')[1];
-        const e = (d.markings[bvid] || []).find((x) => x.category === cat);
-        if (e) {
-          td.textContent = e.status === 'confirmed' ? `已确认 · ${e.confirmCount}` : `待确认 · ${e.confirmCount}`;
-          td.className = e.status === 'confirmed' ? 'status-c' : 'status-p';
-        } else { td.textContent = '已隐藏'; td.className = 'hint'; }
-      }
-    } catch { /* 忽略单条失败 */ }
-  }
+  await Promise.all(Object.entries(keyed).map(async ([bvid, tds]) => {
+    const entries = await fetchEntries(bvid);
+    for (const td of tds) setStatusCell(td, entries, td.dataset.key.split('|')[1]);
+  }));
 }
 
 async function loadLv6() {
@@ -286,17 +292,41 @@ document.addEventListener('click', async (ev) => {
     if (act === 'confirm') {
       await api('/api/admin/confirm', { method: 'POST', body: JSON.stringify({ bvid: btn.dataset.bvid, category: btn.dataset.cat }) });
       msg(`已确认 ${btn.dataset.bvid} 的「${CAT[btn.dataset.cat]}」标记（不虚增票数）`, true);
-      await loadOverview();
+      // 局部更新：只刷新该行状态与按钮，不重建整表（避免全列表闪烁）
+      const key = btn.dataset.bvid + '|' + btn.dataset.cat;
+      const td = [...document.querySelectorAll('#recentTable td[data-key]')].find((x) => x.dataset.key === key);
+      if (td) setStatusCell(td, await fetchEntries(btn.dataset.bvid), btn.dataset.cat);
+      document.querySelectorAll('#recentTable button[data-act="confirm"]').forEach((b) => {
+        if (b.dataset.bvid === btn.dataset.bvid && b.dataset.cat === btn.dataset.cat) {
+          b.disabled = true; b.textContent = '已确认'; b.className = 'gray';
+        }
+      });
     } else if (act === 'ban') {
       const note = prompt('封禁备注（可选）：') ?? '';
       await api('/api/admin/shadowban', { method: 'POST', body: JSON.stringify({ publicId: btn.dataset.pid, note }) });
       msg('已影子封禁（其内容对全网隐藏、本人可见）', true);
-      await loadOverview();
+      if (btn.closest('table')?.id === 'lv6Table') {
+        await loadLv6();
+      } else {
+        // 局部更新：该贡献者在列表中的所有行状态置为已隐藏、禁用确认按钮
+        document.querySelectorAll('#recentTable button[data-pid]').forEach((b) => {
+          if (b.dataset.pid !== btn.dataset.pid) return;
+          const tr = b.closest('tr');
+          const td = tr?.querySelector('td[data-key]');
+          if (td) { td.textContent = '已隐藏'; td.className = 'hint'; }
+          const c = tr?.querySelector('button[data-act="confirm"]');
+          if (c) { c.disabled = true; c.textContent = '已确认'; c.className = 'gray'; }
+        });
+      }
     } else if (act === 'del') {
       if (!confirm(`物理删除提交 #${btn.dataset.id}？（不可恢复；影子封禁更可逆，恶意用户建议用封禁）`)) return;
       await api('/api/admin/delete-submission', { method: 'DELETE', body: JSON.stringify({ id: Number(btn.dataset.id) }) });
       msg('已删除该条提交', true);
-      await loadOverview();
+      // 局部更新：移除该行即可；趋势总量变化则静默刷新
+      btn.closest('tr')?.remove();
+      const tb = $('recentTable').querySelector('tbody');
+      if (!tb.querySelector('tr')) tb.innerHTML = '<tr><td colspan="7" class="hint">（暂无提交）</td></tr>';
+      void loadTrend();
     } else if (act === 'unconfirm') {
       await api('/api/admin/unconfirm', { method: 'POST', body: JSON.stringify({ bvid: btn.dataset.bvid, category: btn.dataset.cat }) });
       msg('已撤销管理员确认（交还社区投票）', true);
