@@ -16,3 +16,5 @@ Desktop.ini
 .wrangler/
 *.zip
 server/.admin-key
+store-assets/shots/
+store-assets/user-shots/
