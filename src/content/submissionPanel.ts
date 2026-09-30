@@ -6,7 +6,7 @@ import { postMarking, deleteMarking } from '../core/api';
 import {
   addSubmission,
   getSubmissionsForBvid,
-  hasAnySubmission,
+  hasSubmission,
   retractSubmission,
   type StoredSubmission,
 } from '../core/submissions';
@@ -127,11 +127,11 @@ async function renderContent(): Promise<void> {
   (panel.querySelector('.bmk-panel__bvid') as HTMLElement).textContent = currentBvid;
 
   const subs = await getSubmissionsForBvid(currentBvid);
-  if (subs.length > 0) renderManage(body, subs);
+  if (subs.length > 0) renderManage(body, subs, new Set(subs.map((s) => s.category)));
   else renderForm(body);
 }
 
-function renderManage(body: HTMLElement, subs: StoredSubmission[]): void {
+function renderManage(body: HTMLElement, subs: StoredSubmission[], submittedCats: Set<CategoryKey>): void {
   const info = document.createElement('div');
   info.className = 'bmk-panel__label';
   info.textContent = '我的标记（待确认，仅自己可见）：';
@@ -195,11 +195,21 @@ function renderManage(body: HTMLElement, subs: StoredSubmission[]): void {
 
   const foot = document.createElement('div');
   foot.className = 'bmk-panel__hint';
-  foot.textContent = '撤回后可重新提交。';
+  foot.textContent = '撤回后可重新提交；同一视频的不同分类可分别提交。';
   body.append(foot);
+
+  // 同一视频可提交多个不同分类（服务器按 (视频,分类) 去重）：从管理视图进入空白表单
+  const addCat = document.createElement('button');
+  addCat.className = 'bmk-panel__submit';
+  addCat.textContent = '＋ 添加其他分类';
+  addCat.addEventListener('click', () => {
+    body.replaceChildren();
+    renderForm(body, submittedCats);
+  });
+  body.append(addCat);
 }
 
-function renderForm(body: HTMLElement): void {
+function renderForm(body: HTMLElement, submittedCats: Set<CategoryKey> = new Set()): void {
   let selectedCat: CategoryKey | null = null;
   const draft = currentBvid ? drafts.get(currentBvid) : undefined;
 
@@ -221,6 +231,10 @@ function renderForm(body: HTMLElement): void {
     btn.className = 'bmk-panel__cat';
     btn.dataset.cat = cat.key;
     btn.textContent = cat.label;
+    if (submittedCats.has(cat.key)) {
+      btn.disabled = true; // 该分类已提交（每分类一次），禁用防重复
+      btn.title = '该分类已提交，可撤回后重新提交';
+    }
     // 切换分类不清空已填理由（保留用户输入），仅切换证据栏与理由模板
     btn.addEventListener('click', () => {
       selectedCat = cat.key;
@@ -248,7 +262,7 @@ function renderForm(body: HTMLElement): void {
   submit.className = 'bmk-panel__submit';
   submit.textContent = '提交标记';
   submit.addEventListener('click', () => {
-    void handleSubmit(selectedCat, reason, evidence, hint, body);
+    void handleSubmit(selectedCat, reason, evidence, hint, body, submittedCats);
   });
 
   body.append(catRow, reasonLabel, presetsRow, reason, evidenceLabel, evidence, hint, submit);
@@ -290,13 +304,15 @@ async function handleSubmit(
   evidenceInput: HTMLInputElement,
   hint: HTMLElement,
   body: HTMLElement,
+  submittedCats: Set<CategoryKey>,
 ): Promise<void> {
   if (!currentBvid) {
     setHint('未识别到 BVID，无法提交。', hint);
     return;
   }
-  if (await hasAnySubmission(currentBvid)) {
-    setHint('此视频已提交过标记（每人每视频一次），可撤回后重新提交。', hint);
+  // 每人每（视频，分类）一次：同视频的其他分类不受影响（CONTEXT.md「提交」）
+  if (selectedCat && (submittedCats.has(selectedCat) || (await hasSubmission(currentBvid, selectedCat)))) {
+    setHint('该分类你已提交过，可在上方管理视图撤回后重新提交。', hint);
     return;
   }
   if (!selectedCat) {
