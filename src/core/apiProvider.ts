@@ -58,14 +58,11 @@ export class ApiProvider implements MarkProvider {
         ? ({ cache: 'no-store' as const, signal: AbortSignal.timeout(3000) } as const)
         : ({ signal: AbortSignal.timeout(3000) } as const);
       const datas = await Promise.all(
-        chunks.map((chunk) =>
-          fetch(`${base}/api/markings?hashes=${chunk.join(',')}${as ? `&as=${as}` : ''}`, fetchOpts).then(
-            (res): MarkingsResponse => {
-              if (!res.ok) throw new Error(`HTTP ${res.status}`);
-              return res.json();
-            },
-          ),
-        ),
+        chunks.map(async (chunk) => {
+          const res = await fetch(`${base}/api/markings?hashes=${chunk.join(',')}${as ? `&as=${as}` : ''}`, fetchOpts);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return (await res.json()) as MarkingsResponse;
+        }),
       );
       const data = datas.reduce<MarkingsResponse>(
         (acc, d) => ({
