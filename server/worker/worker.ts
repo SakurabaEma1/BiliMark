@@ -604,7 +604,16 @@ export default {
             const body = (await req.json()) as { id?: number };
             const id = Number(body.id);
             if (!Number.isInteger(id) || id <= 0) return json({ error: 'invalid id' }, 400);
+            const row = await env.DB.prepare(`SELECT bvid, category FROM submissions WHERE id = ?`)
+              .bind(id)
+              .first<{ bvid: string; category: string }>();
             const info = await env.DB.prepare(`DELETE FROM submissions WHERE id = ?`).bind(id).run();
+            // 级联清理管理员确认（与 src/index.ts 同步）；投票保留（社区态度延续）
+            if (row) {
+              await env.DB.prepare(`DELETE FROM admin_confirmations WHERE bvid = ? AND category = ?`)
+                .bind(row.bvid, row.category)
+                .run();
+            }
             await adminLog(env.DB, 'delete-submission', String(id), auth.name);
             return json({ ok: true, deleted: info.meta.changes ?? 0 });
           } catch {

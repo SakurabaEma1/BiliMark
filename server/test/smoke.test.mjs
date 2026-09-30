@@ -510,6 +510,27 @@ test('管理分级：mod 密钥鉴权/强制确认覆盖（不虚增票数）/�
   assert.equal(deadWho.status, 404, '吊销后 mod 密钥失效');
 });
 
+test('v0.5 删除级联：物理删除提交时连带清掉该 (视频,分类) 的管理员确认', async () => {
+  const bvid = newBvid();
+  await submitSimple(bvid, newId());
+  await post('/api/admin/confirm', { bvid, category: CAT }, { 'X-Admin-Key': ADMIN_KEY });
+  const listConfs = async () =>
+    (await (await fetch(BASE + '/api/admin/confirmations', { headers: { 'X-Admin-Key': ADMIN_KEY } })).json()).items;
+  assert.ok((await listConfs()).some((c) => c.bvid === bvid && c.category === CAT), '确认应存在');
+
+  const items = (
+    await (await fetch(BASE + '/api/admin/recent-submissions?limit=50', { headers: { 'X-Admin-Key': ADMIN_KEY } })).json()
+  ).items;
+  const item = items.find((i) => i.bvid === bvid);
+  const del = await fetch(BASE + '/api/admin/delete-submission', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY },
+    body: JSON.stringify({ id: item.id }),
+  });
+  assert.equal(del.status, 200);
+  assert.ok(!(await listConfs()).some((c) => c.bvid === bvid && c.category === CAT), '确认应被级联删除');
+});
+
 test('GET /api/markings：bvid 校验与批量上限不 500', async () => {
   assert.deepEqual((await get('/api/markings?bvids=BAD')).body.markings, {});
   const fifty = Array.from({ length: 60 }, () => newBvid()).join(',');

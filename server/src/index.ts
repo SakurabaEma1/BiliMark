@@ -810,7 +810,14 @@ const server = createServer((req, res) => {
             sendJson(res, 400, { error: 'invalid id' });
             return;
           }
+          const row = db
+            .prepare(`SELECT bvid, category FROM submissions WHERE id = ?`)
+            .get(id) as { bvid: string; category: string } | undefined;
           const info = db.prepare(`DELETE FROM submissions WHERE id = ?`).run(id);
+          // 级联清理该 (视频,分类) 的管理员确认（幽灵条目根源）；投票保留（社区态度延续）
+          if (row) {
+            db.prepare(`DELETE FROM admin_confirmations WHERE bvid = ? AND category = ?`).run(row.bvid, row.category);
+          }
           adminLog('delete-submission', String(id), auth.name);
           sendJson(res, 200, { ok: true, deleted: Number(info.changes) });
         } catch {
