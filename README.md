@@ -14,7 +14,15 @@
 
 ## 安装（Chrome / Edge）
 
-当前为开发版，需从源码构建：
+**方式一（推荐）：下载打包版**
+
+1. 前往 [Releases 页面](https://github.com/SakurabaEma1/BiliMark/releases/latest) 下载最新的 `bilimark-x.y.z.zip`
+2. 解压到任意**固定位置**（不要删除该文件夹）
+3. 打开 `chrome://extensions`，开启右上角「开发者模式」
+4. 「加载已解压的扩展程序」→ 选择解压出来的文件夹
+5. 打开任意 B 站页面即可使用
+
+**方式二：从源码构建**
 
 1. 安装 [Node.js](https://nodejs.org/)（建议 ≥ 20）
 2. 下载本仓库，在仓库根目录执行：
