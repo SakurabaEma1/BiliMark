@@ -21,6 +21,11 @@ async function bvidHashPrefix(bvid: string): Promise<string> {
   return prefix;
 }
 
+interface MarkingsResponse {
+  markings: Record<string, Array<MarkingEntry & { upMid?: number }>>;
+  upWarnings?: Record<string, { name?: string; categories: Record<string, number> }>;
+}
+
 /**
  * 服务器数据源：批量查询（视频,分类）聚合结果。
  * 服务器不可达时回退到 fallback（Mock），本地提交闭环与演示不受影响——
@@ -45,17 +50,30 @@ export class ApiProvider implements MarkProvider {
       );
       // as=本人公开 ID：影子封禁下本人仍可见自己的提交（GOVERNANCE.md）
       const as = await getPublicIdHash();
-      const res = await fetch(
-        `${base}/api/markings?hashes=${hashes.join(',')}${as ? `&as=${as}` : ''}`,
-        opts?.fresh
-          ? { cache: 'no-store', signal: AbortSignal.timeout(3000) }
-          : { signal: AbortSignal.timeout(3000) },
+      // 服务器单次 hashes 上限 50：大列表（首页/搜索）分块请求再合并，避免尾部卡片静默丢失
+      const CHUNK = 50;
+      const chunks: string[][] = [];
+      for (let i = 0; i < hashes.length; i += CHUNK) chunks.push(hashes.slice(i, i + CHUNK));
+      const fetchOpts = opts?.fresh
+        ? ({ cache: 'no-store' as const, signal: AbortSignal.timeout(3000) } as const)
+        : ({ signal: AbortSignal.timeout(3000) } as const);
+      const datas = await Promise.all(
+        chunks.map((chunk) =>
+          fetch(`${base}/api/markings?hashes=${chunk.join(',')}${as ? `&as=${as}` : ''}`, fetchOpts).then(
+            (res): MarkingsResponse => {
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              return res.json();
+            },
+          ),
+        ),
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as {
-        markings: Record<string, Array<MarkingEntry & { upMid?: number }>>;
-        upWarnings?: Record<string, { name?: string; categories: Record<string, number> }>;
-      };
+      const data = datas.reduce<MarkingsResponse>(
+        (acc, d) => ({
+          markings: { ...acc.markings, ...d.markings },
+          upWarnings: { ...acc.upWarnings, ...d.upWarnings },
+        }),
+        { markings: {}, upWarnings: {} },
+      );
       const map = new Map<string, VideoMarkings>();
       for (const [prefix, bvid] of prefixToBvid) {
         const raw = data.markings?.[bvid];

@@ -153,6 +153,21 @@ function buildTip(entries: MarkingEntry[], upWarning?: VideoMarkings['upWarning'
     reason.textContent = e.reason;
     line.append(head, reason);
     tip.append(line);
+    // 证据/原视频链接（营销号矩阵场景：想看原内容的人直达源头，不给搬运号播放量）
+    if (e.evidence && e.evidence.length > 0) {
+      const ev = document.createElement('div');
+      ev.className = 'bmk-chip__tip-evidence';
+      ev.append(`${e.category === 'stolen' ? '原视频' : '证据'}：`);
+      e.evidence.slice(0, 2).forEach((href, i) => {
+        const a = document.createElement('a');
+        a.href = href;
+        a.target = '_blank';
+        a.rel = 'noreferrer noopener';
+        a.textContent = `[${i + 1}]`;
+        ev.append(a, ' ');
+      });
+      tip.append(ev);
+    }
   }
 
   const foot = document.createElement('div');

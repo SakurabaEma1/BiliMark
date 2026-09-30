@@ -213,6 +213,20 @@
 .bmk-chip__tip-line {
   margin-bottom: 4px;
 }
+/* 悬浮卡内的证据/原视频链接（已确认标记透出，营销号矩阵场景直达源头） */
+.bmk-chip__tip-evidence {
+  font-size: 11px;
+  color: var(--bmk-text-dim);
+  margin: -2px 0 4px;
+}
+.bmk-chip__tip-evidence a {
+  color: var(--bmk-link);
+  text-decoration: none;
+  margin-right: 4px;
+}
+.bmk-chip__tip-evidence a:hover {
+  text-decoration: underline;
+}
 /* 官方 AI 生成声明小标（中性信息，不代表低质判定） */
 .bmk-chip__ai {
   margin-left: 4px;
