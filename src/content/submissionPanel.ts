@@ -11,6 +11,7 @@ import {
   type StoredSubmission,
 } from '../core/submissions';
 import { CATEGORY_LABELS, type CategoryKey } from '../core/types';
+import { applyTheme } from './theme';
 
 // 分类按钮顺序即 types 的 CategoryKey 定义顺序，文案单一来源
 const CATS: Array<{ key: CategoryKey; label: string }> = (
@@ -62,6 +63,7 @@ export function toggleSubmissionPanel(
   if (!panel) {
     panel = buildPanelShell();
     document.body.appendChild(panel);
+    applyTheme(panel); // 浅色页面切换浅色调色板
   }
 
   // 贴着点击位置弹出（文档流坐标，随页面滚动）

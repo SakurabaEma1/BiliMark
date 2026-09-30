@@ -2,6 +2,7 @@ import { parseBvidFromUrl } from './bilibili/urls';
 import type { MarkProvider } from '../core/provider';
 import type { MarkingEntry, VideoMarkings } from '../core/types';
 import { categoryLabel } from '../core/types';
+import { applyTheme } from './theme';
 import { STR } from '../core/strings';
 
 /** 视频卡片候选选择器：首页 / 搜索 / 热门 / 播放页右侧「相关视频」/ UP 空间页（属性包含匹配，兼容变体类名） */
@@ -126,6 +127,7 @@ export function paintBadge(card: HTMLElement, vm: VideoMarkings): void {
   }
   chip.append(buildTip(entries, vm.upWarning));
   card.appendChild(chip);
+  applyTheme(chip, card); // 浅色页面切换浅色调色板
 }
 
 function buildTip(entries: MarkingEntry[], upWarning?: VideoMarkings['upWarning']): HTMLElement {

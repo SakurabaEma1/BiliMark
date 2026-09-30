@@ -1,4 +1,47 @@
-/* ===== BiliMark 播放页分类角标（SB 分类角标同位，标题行内联、零推挤） ===== */
+/* ===== BiliMark 播放页分类角标（SB 分类角标同位，标题行内联、零推挤） =====
+   调色板走 CSS 变量：默认夜间（原设计），.bmk-light 由 theme.ts 按页面背景亮度
+   自动加挂（浅色页面下整体切换浅色调色板，避免提示过于显眼）。 */
+
+.bmk-pill,
+.bmk-pill__panel,
+.bmk-panel,
+.bmk-chip,
+.bmk-chip__tip {
+  --bmk-surface: rgba(18, 18, 22, 0.92);
+  --bmk-border: rgba(255, 170, 0, 0.55);
+  --bmk-text: #e6e6e6;
+  --bmk-text-dim: #9a9a9a;
+  --bmk-text-faint: #777777;
+  --bmk-accent: #ffaa00;
+  --bmk-link: #6ca4e8;
+  --bmk-control-bg: #2a2a30;
+  --bmk-control-border: #444444;
+  --bmk-control-text: #cccccc;
+  --bmk-warn: #ff7a7a;
+  --bmk-warn-bg: rgba(255, 122, 122, 0.08);
+  --bmk-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.bmk-pill.bmk-light,
+.bmk-pill__panel.bmk-light,
+.bmk-panel.bmk-light,
+.bmk-chip.bmk-light,
+.bmk-chip.bmk-light .bmk-chip__tip {
+  --bmk-surface: rgba(255, 255, 255, 0.97);
+  --bmk-border: rgba(178, 118, 10, 0.4);
+  --bmk-text: #3d3d46;
+  --bmk-text-dim: #6a6a75;
+  --bmk-text-faint: #8a8a93;
+  --bmk-accent: #a86e00;
+  --bmk-link: #2a6fc4;
+  --bmk-control-bg: #f3f4f6;
+  --bmk-control-border: #d8d9de;
+  --bmk-control-text: #4a4a55;
+  --bmk-warn: #d05555;
+  --bmk-warn-bg: rgba(224, 100, 100, 0.07);
+  --bmk-shadow: 0 2px 10px rgba(60, 60, 70, 0.18);
+}
+
 .bmk-pill {
   position: relative;
   display: inline-flex;
@@ -7,34 +50,34 @@
   margin-left: 10px;
   padding: 2px 10px;
   border-radius: 12px;
-  background: rgba(18, 18, 22, 0.92);
-  border: 1px solid rgba(255, 170, 0, 0.55);
-  color: #e6e6e6;
+  background: var(--bmk-surface);
+  border: 1px solid var(--bmk-border);
+  color: var(--bmk-text);
   font-size: 12px;
   line-height: 1.6;
   vertical-align: middle;
   white-space: nowrap;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--bmk-shadow);
 }
 .bmk-pill b {
-  color: #ffaa00;
+  color: var(--bmk-accent);
   font-weight: 600;
 }
 .bmk-pill__pending {
-  color: #9a9a9a;
+  color: var(--bmk-text-dim);
 }
 .bmk-pill__close {
   border: none;
   background: transparent;
-  color: #9a9a9a;
+  color: var(--bmk-text-dim);
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
   padding: 0;
 }
 .bmk-pill__close:hover {
-  color: #ffffff;
+  color: var(--bmk-text);
 }
 /* 理由面板：body 顶层 portal（top/left 由 JS 按角标实时坐标写入） */
 .bmk-pill__panel {
@@ -43,9 +86,9 @@
   width: 280px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: rgba(18, 18, 22, 0.96);
-  border: 1px solid rgba(255, 170, 0, 0.4);
-  color: #cccccc;
+  background: var(--bmk-surface);
+  border: 1px solid var(--bmk-border);
+  color: var(--bmk-text-dim);
   font-size: 12px;
   line-height: 1.6;
   text-align: left;
@@ -53,7 +96,7 @@
   cursor: default;
   max-height: 240px;
   overflow: auto;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--bmk-shadow);
 }
 .bmk-pill__panel[hidden] {
   display: none;
@@ -69,13 +112,13 @@
 .bmk-details__upwarning {
   margin-bottom: 4px;
   padding: 4px 6px;
-  border-left: 3px solid #ff7a7a;
-  background: rgba(255, 122, 122, 0.08);
-  color: #ff9a9a;
+  border-left: 3px solid var(--bmk-warn);
+  background: var(--bmk-warn-bg);
+  color: var(--bmk-warn);
   font-weight: 600;
 }
 .bmk-chip__tip-upwarning {
-  color: #ff9a9a;
+  color: var(--bmk-warn);
   font-weight: 600;
   margin-bottom: 4px;
 }
@@ -84,20 +127,20 @@
 }
 .bmk-details__head {
   font-weight: 600;
-  color: #ffaa00;
+  color: var(--bmk-accent);
 }
 .bmk-details__item--pending .bmk-details__head {
-  color: #9a9a9a;
+  color: var(--bmk-text-dim);
 }
 .bmk-details__reason {
-  color: #cccccc;
+  color: var(--bmk-text);
 }
 .bmk-details__evidence {
-  color: #9a9a9a;
+  color: var(--bmk-text-dim);
   font-size: 12px;
 }
 .bmk-details__evidence a {
-  color: #6ca4e8;
+  color: var(--bmk-link);
   text-decoration: none;
   margin-right: 4px;
 }
@@ -105,7 +148,7 @@
   text-decoration: underline;
 }
 .bmk-details__disclaimer {
-  color: #777777;
+  color: var(--bmk-text-faint);
   font-size: 11px;
   margin-top: 6px;
 }
@@ -115,7 +158,7 @@
   font-size: 12px;
 }
 .bmk-details__up a {
-  color: #6ca4e8;
+  color: var(--bmk-link);
   text-decoration: none;
 }
 .bmk-details__up a:hover {
@@ -123,12 +166,12 @@
 }
 .bmk-details__appeal {
   margin-top: 6px;
-  color: #777777;
+  color: var(--bmk-text-faint);
   font-size: 11px;
   line-height: 1.6;
 }
 .bmk-details__appeal a {
-  color: #9a9a9a;
+  color: var(--bmk-text-dim);
 }
 
 /* ===== Feed 角标 ===== */
@@ -141,9 +184,9 @@
   align-items: center;
   padding: 1px 7px;
   border-radius: 3px;
-  background: rgba(30, 30, 34, 0.92);
-  border: 1px solid rgba(255, 170, 0, 0.6);
-  color: #ffb027;
+  background: var(--bmk-surface);
+  border: 1px solid var(--bmk-border);
+  color: var(--bmk-accent);
   font-size: 12px;
   line-height: 1.6;
   cursor: default;
@@ -156,9 +199,9 @@
   width: 250px;
   padding: 8px 10px;
   border-radius: 6px;
-  background: rgba(18, 18, 22, 0.96);
-  border: 1px solid rgba(255, 170, 0, 0.4);
-  color: #cccccc;
+  background: var(--bmk-surface);
+  border: 1px solid var(--bmk-border);
+  color: var(--bmk-text);
   font-size: 12px;
   line-height: 1.6;
   white-space: normal;
@@ -174,18 +217,18 @@
 .bmk-chip__ai {
   margin-left: 4px;
   padding: 0 4px;
-  border: 1px solid #6ca4e8;
+  border: 1px solid var(--bmk-link);
   border-radius: 3px;
-  color: #6ca4e8;
+  color: var(--bmk-link);
   font-size: 10px;
   line-height: 1.5;
 }
 .bmk-chip__tip-line b {
   display: block;
-  color: #ffaa00;
+  color: var(--bmk-accent);
 }
 .bmk-chip__tip-foot {
-  color: #777777;
+  color: var(--bmk-text-faint);
   font-size: 11px;
   margin-top: 2px;
 }
@@ -212,19 +255,40 @@
   border-color: #7ec97e;
   color: #7ec97e;
 }
+/* 浅色页面：入口粉与完成绿加深保证对比度 */
+.bmk-entry.bmk-light {
+  background: rgba(251, 114, 153, 0.07);
+  border-color: rgba(224, 90, 133, 0.55);
+  color: #d94f7d;
+}
+.bmk-entry.bmk-light:hover {
+  border-color: #d94f7d;
+  color: #d94f7d;
+}
+.bmk-entry--done.bmk-light {
+  border-color: rgba(80, 160, 90, 0.55);
+  color: #3f9d4f;
+}
+.bmk-entry--done.bmk-light:hover {
+  border-color: #3f9d4f;
+  color: #3f9d4f;
+}
 .bmk-panel {
   position: absolute;
   width: 300px;
   z-index: 2147483000;
   padding: 12px;
   border-radius: 10px;
-  background: rgba(18, 18, 22, 0.97);
-  border: 1px solid rgba(255, 170, 0, 0.45);
-  color: #e6e6e6;
+  background: var(--bmk-surface);
+  border: 1px solid var(--bmk-border);
+  color: var(--bmk-text);
   font-size: 12px;
   line-height: 1.6;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
   text-align: left;
+}
+.bmk-panel.bmk-light {
+  box-shadow: 0 6px 24px rgba(60, 60, 70, 0.2);
 }
 .bmk-panel[hidden] {
   display: none !important;
@@ -238,21 +302,21 @@
   font-weight: 600;
 }
 .bmk-panel__bvid {
-  color: #ffaa00;
+  color: var(--bmk-accent);
   font-size: 11px;
   font-weight: 400;
 }
 .bmk-panel__close {
   border: none;
   background: transparent;
-  color: #9a9a9a;
+  color: var(--bmk-text-dim);
   font-size: 15px;
   line-height: 1;
   cursor: pointer;
   padding: 0;
 }
 .bmk-panel__close:hover {
-  color: #ffffff;
+  color: var(--bmk-text);
 }
 .bmk-panel__cats {
   display: flex;
@@ -263,16 +327,16 @@
 .bmk-panel__cat {
   flex: 1 1 30%;
   padding: 6px 0;
-  border: 1px solid #444444;
+  border: 1px solid var(--bmk-control-border);
   border-radius: 6px;
-  background: #2a2a30;
-  color: #e6e6e6;
+  background: var(--bmk-control-bg);
+  color: var(--bmk-control-text);
   cursor: pointer;
   font-size: 12px;
 }
 .bmk-panel__cat.active {
-  border-color: #ffaa00;
-  color: #ffaa00;
+  border-color: var(--bmk-accent);
+  color: var(--bmk-accent);
   background: rgba(255, 170, 0, 0.08);
 }
 .bmk-panel__cat:disabled {
@@ -280,7 +344,7 @@
   cursor: not-allowed;
 }
 .bmk-panel__label {
-  color: #aaaaaa;
+  color: var(--bmk-text-dim);
   margin: 6px 0 4px;
 }
 .bmk-panel textarea,
@@ -288,10 +352,10 @@
   width: 100%;
   box-sizing: border-box;
   padding: 6px 8px;
-  border: 1px solid #444444;
+  border: 1px solid var(--bmk-control-border);
   border-radius: 6px;
-  background: #2a2a30;
-  color: #e6e6e6;
+  background: var(--bmk-control-bg);
+  color: var(--bmk-text);
   font: 12px/1.5 system-ui, sans-serif;
   resize: vertical;
 }
@@ -310,20 +374,20 @@
 }
 .bmk-panel__preset {
   padding: 2px 8px;
-  border: 1px dashed #555555;
+  border: 1px dashed var(--bmk-control-border);
   border-radius: 10px;
   background: transparent;
-  color: #aaaaaa;
+  color: var(--bmk-text-dim);
   cursor: pointer;
   font-size: 11px;
   line-height: 1.6;
 }
 .bmk-panel__preset:hover {
-  border-color: #ffaa00;
-  color: #ffaa00;
+  border-color: var(--bmk-accent);
+  color: var(--bmk-accent);
 }
 .bmk-panel__hint {
-  color: #9a9a9a;
+  color: var(--bmk-text-dim);
   margin-top: 6px;
   min-height: 18px;
   white-space: normal;
@@ -333,17 +397,17 @@
   width: 100%;
   margin-top: 8px;
   padding: 8px;
-  border: 1px solid #ffaa00;
+  border: 1px solid var(--bmk-accent);
   border-radius: 6px;
   background: rgba(255, 170, 0, 0.12);
-  color: #ffaa00;
+  color: var(--bmk-accent);
   cursor: pointer;
   font-size: 13px;
 }
 
 /* ===== 已提交管理视图 ===== */
 .bmk-manage__card {
-  border: 1px solid rgba(255, 170, 0, 0.3);
+  border: 1px solid var(--bmk-border);
   border-radius: 8px;
   padding: 8px 10px;
   margin-bottom: 8px;
@@ -351,15 +415,15 @@
 .bmk-manage__retract {
   margin-top: 6px;
   padding: 4px 12px;
-  border: 1px solid #ff7a7a;
+  border: 1px solid var(--bmk-warn);
   border-radius: 6px;
   background: transparent;
-  color: #ff7a7a;
+  color: var(--bmk-warn);
   cursor: pointer;
   font-size: 12px;
 }
 .bmk-manage__retract:hover {
-  background: rgba(255, 122, 122, 0.12);
+  background: var(--bmk-warn-bg);
 }
 
 /* ===== 理由面板内的投票按钮 ===== */
@@ -369,14 +433,14 @@
   gap: 4px;
 }
 .bmk-details__votes button {
-  border: 1px solid #444444;
-  background: #2a2a30;
+  border: 1px solid var(--bmk-control-border);
+  background: var(--bmk-control-bg);
   border-radius: 4px;
-  color: #cccccc;
+  color: var(--bmk-control-text);
   font-size: 11px;
   padding: 1px 6px;
   cursor: pointer;
 }
 .bmk-details__votes button:hover {
-  border-color: #ffaa00;
+  border-color: var(--bmk-accent);
 }

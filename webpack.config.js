@@ -35,6 +35,7 @@ module.exports = {
         { from: 'src/popup/popup.html', to: 'popup.html' },
         { from: 'src/options/options.html', to: 'options.html' },
         { from: 'src/icons', to: 'icons' },
+        { from: 'src/_locales', to: '_locales' },
       ],
     }),
   ],

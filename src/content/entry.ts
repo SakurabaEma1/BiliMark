@@ -1,5 +1,6 @@
 import { parseBvidFromUrl } from './bilibili/urls';
 import { buildTitleTiers, mountSelfHealing } from './mount';
+import { applyTheme } from './theme';
 import { hasAnySubmission } from '../core/submissions';
 import { toggleSubmissionPanel } from './submissionPanel';
 
@@ -11,6 +12,7 @@ import { toggleSubmissionPanel } from './submissionPanel';
 export function mountEntryPill(anchor: HTMLElement, onChanged: () => void): () => void {
   const pill = document.createElement('span');
   pill.className = 'bmk-pill bmk-entry';
+  applyTheme(pill, anchor); // 浅色页面切换浅色调色板
   pill.title = '标记此视频（社区众包）';
 
   const syncState = (): void => {

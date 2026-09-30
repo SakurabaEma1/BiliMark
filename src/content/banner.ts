@@ -2,6 +2,7 @@ import type { MarkingEntry, UpWarning } from '../core/types';
 import { categoryLabel } from '../core/types';
 import { STR } from '../core/strings';
 import { buildTitleTiers, mountSelfHealing } from './mount';
+import { applyTheme } from './theme';
 
 export interface BannerHandle {
   destroy(): void;
@@ -40,6 +41,7 @@ export function createBanner(
 
   const pill = document.createElement('span');
   pill.className = 'bmk-pill';
+  applyTheme(pill, anchor); // 页面为浅色时切换浅色调色板（theme.ts）
 
   // 纯待确认（如自己刚提交、尚无人确认）也展示——低置信，仅播放页
   const first = confirmed[0] ?? entries[0];
@@ -66,6 +68,7 @@ export function createBanner(
   const panel = buildDetails(entries, opts);
   panel.hidden = true;
   document.body.appendChild(panel);
+  applyTheme(panel);
 
   let destroyed = false;
 
