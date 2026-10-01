@@ -6,6 +6,7 @@ import { createBanner, type BannerHandle } from './banner';
 import { mountEntryPill } from './entry';
 import { postVote } from '../core/api';
 import { getOrCreatePrivateId } from '../core/privateId';
+import { extContextValid } from '../core/extContext';
 import type { MarkProvider } from '../core/provider';
 import type { CategoryKey } from '../core/types';
 
@@ -32,6 +33,7 @@ export class VideoPageController {
   }
 
   private async enter(url: string, reopenPanel = false): Promise<void> {
+    if (!extContextValid()) return; // 旧实例失联：不再拉取不再挂 UI
     const bvid = parseBvidFromUrl(url);
     if (!bvid) return;
     const myToken = ++this.token;

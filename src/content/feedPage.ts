@@ -2,6 +2,7 @@ import { parseBvidFromUrl } from './bilibili/urls';
 import type { MarkProvider } from '../core/provider';
 import type { MarkingEntry, VideoMarkings } from '../core/types';
 import { categoryLabel } from '../core/types';
+import { extContextValid } from '../core/extContext';
 import { applyTheme } from './theme';
 import { STR } from '../core/strings';
 
@@ -54,6 +55,11 @@ export class FeedController {
   }
 
   private scan(): void {
+    // 旧实例失联：断开 observer 与计时器自停，避免死循环空转（错误由 index.ts 全局网静音）
+    if (!extContextValid()) {
+      this.stop();
+      return;
+    }
     let added = false;
     for (const sel of CARD_SELECTORS) {
       for (const card of document.querySelectorAll(sel)) {

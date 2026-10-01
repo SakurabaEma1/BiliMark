@@ -17,11 +17,13 @@ export function mountEntryPill(anchor: HTMLElement, onChanged: () => void): () =
 
   const syncState = (): void => {
     const bvid = parseBvidFromUrl(location.href) ?? '';
-    void hasAnySubmission(bvid).then((has) => {
-      pill.classList.toggle('bmk-entry--done', has);
-      pill.textContent = has ? '✓ 已标记' : '＋ 标记';
-      pill.title = has ? '查看/撤回我的标记' : '标记此视频（社区众包）';
-    });
+    void hasAnySubmission(bvid)
+      .then((has) => {
+        pill.classList.toggle('bmk-entry--done', has);
+        pill.textContent = has ? '✓ 已标记' : '＋ 标记';
+        pill.title = has ? '查看/撤回我的标记' : '标记此视频（社区众包）';
+      })
+      .catch(() => {}); // 旧实例失联时静默（此链路最高频，全局网之外的双保险）
   };
   syncState();
 
