@@ -5,6 +5,7 @@ server/node_modules/
 server/dist/
 server/data/
 tmp_probe/
+tools/
 .tmp_video.html
 AGENTS.md
 CONTEXT.md
